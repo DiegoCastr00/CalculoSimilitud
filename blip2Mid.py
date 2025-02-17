@@ -8,20 +8,32 @@ import torch
 device_ids = [0, 1]  
 torch.cuda.set_device(device_ids[0])
 
+# Cargar modelo y procesador
 processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
 model = Blip2ForConditionalGeneration.from_pretrained(
     "Salesforce/blip2-opt-2.7b",     
     torch_dtype=torch.float16
 )
-
 model = torch.nn.DataParallel(model, device_ids=device_ids).to("cuda")
 
+# Rutas de archivos
 metadata_path = "metadata.csv"
-data = pd.read_csv(metadata_path)
+output_csv = "metadata_blip2.csv"
 
+# Cargar datos originales
+data = pd.read_csv(metadata_path)
 data["file_name"] = data["file_name"].str.replace("imagenes/resizeSD/", "", regex=False)
 
-data = data.head(100)
+# Cargar progreso previo si existe
+if os.path.exists(output_csv):
+    existing_data = pd.read_csv(output_csv)
+    if "blip2" in existing_data.columns:
+        data = data.merge(existing_data[["file_name", "blip2"]], on="file_name", how="left")
+    else:
+        data["blip2"] = None
+else:
+    data["blip2"] = None
+
 def generate_caption(image_path):
     try:
         raw_image = Image.open("imagenes/resizeSD/" + image_path).convert('RGB')
@@ -34,23 +46,33 @@ def generate_caption(image_path):
         return "Error"
 
 start_time = time.time()
-captions = []
+batch_size = 2000
+processed = 0
 
 for i, row in data.iterrows():
+    if pd.notna(row["blip2"]):  # Si ya tiene descripción, saltar
+        continue
+
     image_path = row["file_name"]
-    caption = generate_caption(image_path)
-    captions.append(caption)
-    # print(f"Imagen {i+1}/{len(data)}: {caption}")
+    data.at[i, "blip2"] = generate_caption(image_path)
+    processed += 1
 
-    if i % 100 == 0 and i != 0:
-        print(f"Se han procesado {i} imágenes...")
+    if processed % 100 == 0:
+        print(f"Se han procesado {processed} imágenes nuevas...")
 
-data["blip2"] = captions
-data.to_csv("metadata_blip2.csv", index=False)
+    # Guardar cada 2000 imágenes
+    if processed % batch_size == 0:
+        data.to_csv(output_csv, index=False)
+        print(f"Guardado parcial en {output_csv}")
 
-end_time = time.time()
-print(f"\nProcesamiento completado en {end_time - start_time:.2f} segundos.")
+# Guardado final
+data.to_csv(output_csv, index=False)
+print(f"\nProcesamiento completado y guardado en {output_csv}")
 
+# Liberar memoria
 import gc
 gc.collect()
 torch.cuda.empty_cache()
+
+end_time = time.time()
+print(f"\nTiempo total: {end_time - start_time:.2f} segundos.")
