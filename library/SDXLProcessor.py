@@ -4,6 +4,7 @@ import torch
 from PIL import Image
 from diffusers import StableDiffusionXLImg2ImgPipeline
 import gc
+from diffusers import AutoencoderTiny
 
 class SDXLImageProcessor:
     def __init__(self, 
@@ -11,10 +12,10 @@ class SDXLImageProcessor:
                  csv_path="datos.csv",
                  input_dir="imagenes/resize768",
                  output_dir="imagenes/output",
-                 num_inference_steps=20,
+                 num_inference_steps=25,
                  strength=0.4,
                  guidance_scale=7.5,
-                 batch_size=5):
+                 batch_size=6):
 
         self.gpu_id = gpu_id
         self.csv_path = csv_path
@@ -36,13 +37,21 @@ class SDXLImageProcessor:
         print(f"Dispositivo seleccionado: {device}")
         print(f"GPU disponible: {torch.cuda.get_device_name(self.gpu_id)}")
         print(f"Memoria total: {torch.cuda.get_device_properties(self.gpu_id).total_memory / 1e9:.2f} GB")
+        vae = AutoencoderTiny.from_pretrained(
+                'madebyollin/taesdxl',
+                use_safetensors=True,
+                torch_dtype=torch.float16,  
+            ).to(device)  # Usa el device específico, no hardcoded 'cuda'
+    
         
         # Cargar el modelo optimizado
         self.pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
             "stabilityai/stable-diffusion-xl-refiner-1.0",
             torch_dtype=torch.float16,
             variant="fp16",
-            use_safetensors=True
+            use_safetensors=True,
+            vae=vae,
+
         )
         
         # Mover el modelo al dispositivo CUDA específico
