@@ -1,191 +1,179 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import CLIPModel
+from transformers import CLIPModel, CLIPProcessor
 from config import Config
-from typing import Tuple, Dict, List, Union, Optional
 
-class TransformerEncoder(nn.Module):
+class TransformerProjection(nn.Module):
     """
-    Módulo de encoder transformer para procesar embeddings de CLIP.
+    Capa transformadora para refinar los embeddings de CLIP.
     """
-    def __init__(
-        self, 
-        input_dim: int, 
-        hidden_dim: int, 
-        num_layers: int, 
-        num_heads: int, 
-        dropout: float = 0.1
-    ):
-        super().__init__()
+    def __init__(self, embed_dim, hidden_dim, num_layers, num_heads, dropout=0.1):
+        super(TransformerProjection, self).__init__()
         
-        self.linear_in = nn.Linear(input_dim, hidden_dim)
+        # Capa de normalización inicial
+        self.norm = nn.LayerNorm(embed_dim)
         
+        # Capas del transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim, 
+            d_model=embed_dim,
             nhead=num_heads,
-            dim_feedforward=hidden_dim * 4,
+            dim_feedforward=hidden_dim,
             dropout=dropout,
-            batch_first=True,
-            activation='gelu'
+            activation='gelu',
+            batch_first=True
         )
-        
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer=encoder_layer,
+        self.transformer_encoder = nn.TransformerEncoder(
+            encoder_layer,
             num_layers=num_layers
         )
         
-        self.linear_out = nn.Linear(hidden_dim, input_dim)
-        self.norm = nn.LayerNorm(input_dim)
-        self.dropout = nn.Dropout(dropout)
+        # Proyección final
+        self.projection = nn.Sequential(
+            nn.Linear(embed_dim, embed_dim),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(embed_dim, embed_dim)
+        )
         
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Input shape: (batch_size, embedding_dim)
-        # Añadir dimensión de secuencia para transformer
-        x = x.unsqueeze(1)  # (batch_size, 1, embedding_dim)
+    def forward(self, x):
+        # x tiene forma [batch_size, embed_dim]
+        # Añadimos una dimensión de secuencia para el transformer
+        x = x.unsqueeze(1)  # [batch_size, 1, embed_dim]
         
-        # Proyectar a dimensión oculta
-        x = self.linear_in(x)
+        # Normalización
+        x = self.norm(x)
         
         # Pasar por transformer
-        x = self.transformer(x)
-        
-        # Proyectar de vuelta a dimensión original
-        x = self.linear_out(x)
+        x = self.transformer_encoder(x)
         
         # Eliminar dimensión de secuencia
-        x = x.squeeze(1)  # (batch_size, embedding_dim)
+        x = x.squeeze(1)  # [batch_size, embed_dim]
         
-        # Normalizar y aplicar dropout
-        x = self.norm(x)
-        x = self.dropout(x)
+        # Proyección final
+        x = self.projection(x)
+        
+        # Normalizar para similitud del coseno
+        x = F.normalize(x, p=2, dim=1)
         
         return x
 
-
-class SiameseImageSimilarityModel(nn.Module):
+class SiameseCLIPModel(nn.Module):
     """
-    Modelo siamés para calcular similitudes entre imágenes artísticas.
-    Utiliza CLIP como extractor de características congelado y añade
-    capas transformadoras para refinar los embeddings.
+    Modelo siamés basado en CLIP con capas transformadoras adicionales.
     """
-    def __init__(
-        self,
-        clip_model_name: str = Config.CLIP_MODEL_NAME,
-        embedding_dim: int = Config.EMBEDDING_DIM,
-        transformer_hidden_dim: int = Config.TRANSFORMER_HIDDEN_DIM,
-        transformer_layers: int = Config.TRANSFORMER_LAYERS,
-        transformer_heads: int = Config.TRANSFORMER_HEADS,
-        dropout: float = Config.DROPOUT
-    ):
-        super().__init__()
+    def __init__(self, config):
+        super(SiameseCLIPModel, self).__init__()
         
         # Cargar modelo CLIP preentrenado
-        self.clip = CLIPModel.from_pretrained(clip_model_name)
+        self.clip = CLIPModel.from_pretrained(config.CLIP_MODEL_NAME)
+        self.processor = CLIPProcessor.from_pretrained(config.CLIP_MODEL_NAME)
         
-        # Congelar CLIP
+        # Congelar pesos de CLIP
         for param in self.clip.parameters():
             param.requires_grad = False
             
-        # Dimensión del embedding de CLIP para imágenes
-        self.clip_embedding_dim = self.clip.vision_model.config.hidden_size
+        # Dimensión del embedding de CLIP
+        self.embed_dim = config.EMBEDDING_DIM
         
-        # Añadir capas de transformador para refinar embeddings
-        self.transformer = TransformerEncoder(
-            input_dim=self.clip_embedding_dim,
-            hidden_dim=transformer_hidden_dim,
-            num_layers=transformer_layers,
-            num_heads=transformer_heads,
-            dropout=dropout
+        # Capas transformadoras para refinamiento
+        self.transformer_projection = TransformerProjection(
+            embed_dim=self.embed_dim,
+            hidden_dim=config.TRANSFORMER_HIDDEN_DIM,
+            num_layers=config.TRANSFORMER_LAYERS,
+            num_heads=config.TRANSFORMER_HEADS,
+            dropout=config.DROPOUT
         )
         
-        # Proyector final para normalizar embeddings a la dimensión deseada
-        if embedding_dim != self.clip_embedding_dim:
-            self.projector = nn.Linear(self.clip_embedding_dim, embedding_dim)
-        else:
-            self.projector = nn.Identity()
-            
-    def get_clip_image_embeddings(self, images: torch.Tensor) -> torch.Tensor:
+        # Parámetro de temperatura para la función de pérdida
+        self.temperature = nn.Parameter(torch.tensor(config.TEMPERATURE))
+        
+    def encode_image(self, pixel_values):
         """
-        Extrae embeddings de imágenes usando CLIP.
+        Codifica una imagen usando CLIP y luego refina el embedding.
         
         Args:
-            images: Tensor de imágenes (batch_size, 3, H, W)
+            pixel_values: Valores de píxeles normalizados [batch_size, 3, H, W]
             
         Returns:
-            Embeddings de CLIP (batch_size, clip_embedding_dim)
+            Embedding refinado [batch_size, embed_dim]
         """
         with torch.no_grad():
-            vision_outputs = self.clip.vision_model(
-                pixel_values=images,
-                output_hidden_states=False
-            )
-            image_embeds = vision_outputs[1]  # Obtiene el embedding de [CLS]
+            image_features = self.clip.get_image_features(pixel_values=pixel_values)
             
-        return image_embeds
-    
-    def forward_one(self, image: torch.Tensor) -> torch.Tensor:
-        """
-        Proceso una sola imagen a través del pipeline completo.
-        
-        Args:
-            image: Tensor de imagen (batch_size, 3, H, W)
-            
-        Returns:
-            Embedding final refinado y normalizado (batch_size, embedding_dim)
-        """
-        # Extraer embeddings de CLIP
-        clip_embedding = self.get_clip_image_embeddings(image)
-        
         # Refinar con transformer
-        refined_embedding = self.transformer(clip_embedding)
+        refined_features = self.transformer_projection(image_features)
         
-        # Proyectar a la dimensión deseada
-        projected_embedding = self.projector(refined_embedding)
-        
-        # Normalizar el embedding para calcular similitud por coseno
-        normalized_embedding = F.normalize(projected_embedding, p=2, dim=1)
-        
-        return normalized_embedding
+        return refined_features
     
-    def forward(
-        self, 
-        original_images: torch.Tensor, 
-        generated_images: torch.Tensor, 
-        negative_images: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def encode_text(self, text):
         """
-        Procesa tripletes de imágenes (original, generada, negativa).
+        Codifica texto usando CLIP.
         
         Args:
-            original_images: Tensor de imágenes originales (batch_size, 3, H, W)
-            generated_images: Tensor de imágenes generadas (batch_size, 3, H, W)
-            negative_images: Tensor de imágenes negativas (batch_size, 3, H, W)
+            text: Lista de strings con descripciones
             
         Returns:
-            Embeddings normalizados para cada tipo de imagen
+            Embedding de texto [batch_size, embed_dim]
         """
-        original_embeddings = self.forward_one(original_images)
-        generated_embeddings = self.forward_one(generated_images)
-        negative_embeddings = self.forward_one(negative_images)
+        inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
+        inputs = {k: v.to(next(self.parameters()).device) for k, v in inputs.items()}
         
-        return original_embeddings, generated_embeddings, negative_embeddings
+        with torch.no_grad():
+            text_features = self.clip.get_text_features(**inputs)
+            
+        # Refinar con transformer
+        refined_features = self.transformer_projection(text_features)
+        
+        return refined_features
     
-    def compute_similarity(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
+    def forward(self, original_image, generated_image, negative_image, 
+                original_text=None, generated_text=None, negative_text=None):
         """
-        Calcula la similitud coseno entre dos imágenes.
+        Forward pass del modelo siamés.
         
         Args:
-            img1: Primera imagen (batch_size, 3, H, W)
-            img2: Segunda imagen (batch_size, 3, H, W)
+            original_image: Imagen original [batch_size, 3, H, W]
+            generated_image: Imagen generada [batch_size, 3, H, W]
+            negative_image: Imagen negativa [batch_size, 3, H, W]
+            original_text: (Opcional) Descripción de la imagen original
+            generated_text: (Opcional) Descripción de la imagen generada
+            negative_text: (Opcional) Descripción de la imagen negativa
             
         Returns:
-            Similitud coseno entre las imágenes (batch_size)
+            Embeddings refinados y similitudes
         """
-        emb1 = self.forward_one(img1)
-        emb2 = self.forward_one(img2)
+        # Codificar imágenes
+        original_embedding = self.encode_image(original_image)
+        generated_embedding = self.encode_image(generated_image)
+        negative_embedding = self.encode_image(negative_image)
         
-        # Calcular similitud coseno
-        similarity = F.cosine_similarity(emb1, emb2, dim=1)
+        # Calcular similitudes del coseno
+        sim_pos = F.cosine_similarity(original_embedding, generated_embedding, dim=1)
+        sim_neg = F.cosine_similarity(original_embedding, negative_embedding, dim=1)
         
-        return similarity
+        # Si se proporcionan textos, también los codificamos
+        text_embeddings = None
+        if original_text is not None and Config.USE_TEXT_EMBEDDINGS:
+            original_text_embedding = self.encode_text(original_text)
+            generated_text_embedding = self.encode_text(generated_text)
+            negative_text_embedding = self.encode_text(negative_text)
+            
+            text_embeddings = {
+                'original': original_text_embedding,
+                'generated': generated_text_embedding,
+                'negative': negative_text_embedding
+            }
+        
+        return {
+            'embeddings': {
+                'original': original_embedding,
+                'generated': generated_embedding,
+                'negative': negative_embedding,
+                'text': text_embeddings
+            },
+            'similarities': {
+                'positive': sim_pos,
+                'negative': sim_neg
+            }
+        }
