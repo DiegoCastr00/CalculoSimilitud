@@ -12,7 +12,7 @@ import wandb
 
 from model import SiameseCLIPModel
 from loss import MultimodalContrastiveLoss
-from dataset import get_dataloaders
+from transforms import get_dataloaders
 from config import Config
 
 class Trainer:
@@ -50,7 +50,8 @@ class Trainer:
         # Inicializar función de pérdida
         self.criterion = MultimodalContrastiveLoss(
             temperature=config.TEMPERATURE,
-            alpha=0.7  # Más peso a la pérdida de imagen que a la de texto
+            alpha_text=0.3,  # Peso para la pérdida de texto
+            alpha_cross=0.3  # Peso para la pérdida cruzada
         )
         
         # Inicializar dataloaders
@@ -74,29 +75,33 @@ class Trainer:
         
         for batch_idx, batch in enumerate(progress_bar):
             # Mover datos a GPU
-            original_image = batch['original_image'].to(self.device)
-            generated_image = batch['generated_image'].to(self.device)
-            negative_image = batch['negative_image'].to(self.device)
-            
-            # Preparar textos si están disponibles
-            original_text = None
-            generated_text = None
-            negative_text = None
-            
-            if self.config.USE_TEXT_EMBEDDINGS:
-                original_text = batch['original_desc']
-                generated_text = batch['generated_desc']
-                negative_text = batch['negative_desc']
+            for key in batch:
+                if isinstance(batch[key], torch.Tensor):
+                    batch[key] = batch[key].to(self.device)
             
             # Forward pass con mixed precision
             self.optimizer.zero_grad()
             
             with autocast():
-                outputs = self.model(
-                    original_image, generated_image, negative_image,
-                    original_text, generated_text, negative_text
-                )
+                # Preparar entradas según el formato del dataset
+                inputs = {
+                    'original_pixel_values': batch['original_pixel_values'],
+                    'generated_pixel_values': batch['generated_pixel_values'],
+                    'negative_pixel_values': batch['negative_pixel_values']
+                }
                 
+                # Añadir tokens de texto si están disponibles
+                if self.config.USE_TEXT_EMBEDDINGS:
+                    inputs.update({
+                        'original_input_ids': batch['original_input_ids'],
+                        'generated_input_ids': batch['generated_input_ids'],
+                        'negative_input_ids': batch['negative_input_ids'],
+                        'original_attention_mask': batch['original_attention_mask'],
+                        'generated_attention_mask': batch['generated_attention_mask'],
+                        'negative_attention_mask': batch['negative_attention_mask']
+                    })
+                
+                outputs = self.model(**inputs)
                 loss_dict = self.criterion(outputs)
                 loss = loss_dict['total_loss']
             
@@ -107,17 +112,12 @@ class Trainer:
             
             # Actualizar métricas
             epoch_loss += loss.item()
-            
-            # Calcular precisión de triplete (si sim_pos > sim_neg)
-            sim_pos = outputs['similarities']['positive']
-            sim_neg = outputs['similarities']['negative']
-            triplet_acc = (sim_pos > sim_neg).float().mean().item()
-            epoch_triplet_acc += triplet_acc
+            epoch_triplet_acc += loss_dict['triplet_accuracy']
             
             # Actualizar barra de progreso
             progress_bar.set_postfix({
                 'loss': loss.item(),
-                'triplet_acc': triplet_acc
+                'triplet_acc': loss_dict['triplet_accuracy']
             })
         
         # Calcular métricas promedio
@@ -142,51 +142,63 @@ class Trainer:
         self.model.eval()
         val_loss = 0
         val_triplet_acc = 0
+        val_metrics = {}
         
         with torch.no_grad():
             for batch in tqdm(self.val_loader, desc="Validating"):
                 # Mover datos a GPU
-                original_image = batch['original_image'].to(self.device)
-                generated_image = batch['generated_image'].to(self.device)
-                negative_image = batch['negative_image'].to(self.device)
+                for key in batch:
+                    if isinstance(batch[key], torch.Tensor):
+                        batch[key] = batch[key].to(self.device)
                 
-                # Preparar textos si están disponibles
-                original_text = None
-                generated_text = None
-                negative_text = None
+                # Preparar entradas según el formato del dataset
+                inputs = {
+                    'original_pixel_values': batch['original_pixel_values'],
+                    'generated_pixel_values': batch['generated_pixel_values'],
+                    'negative_pixel_values': batch['negative_pixel_values']
+                }
                 
+                # Añadir tokens de texto si están disponibles
                 if self.config.USE_TEXT_EMBEDDINGS:
-                    original_text = batch['original_desc']
-                    generated_text = batch['generated_desc']
-                    negative_text = batch['negative_desc']
+                    inputs.update({
+                        'original_input_ids': batch['original_input_ids'],
+                        'generated_input_ids': batch['generated_input_ids'],
+                        'negative_input_ids': batch['negative_input_ids'],
+                        'original_attention_mask': batch['original_attention_mask'],
+                        'generated_attention_mask': batch['generated_attention_mask'],
+                        'negative_attention_mask': batch['negative_attention_mask']
+                    })
                 
                 # Forward pass
-                outputs = self.model(
-                    original_image, generated_image, negative_image,
-                    original_text, generated_text, negative_text
-                )
-                
+                outputs = self.model(**inputs)
                 loss_dict = self.criterion(outputs)
-                loss = loss_dict['total_loss']
                 
                 # Actualizar métricas
-                val_loss += loss.item()
+                val_loss += loss_dict['total_loss'].item()
+                val_triplet_acc += loss_dict['triplet_accuracy']
                 
-                # Calcular precisión de triplete (si sim_pos > sim_neg)
-                sim_pos = outputs['similarities']['positive']
-                sim_neg = outputs['similarities']['negative']
-                triplet_acc = (sim_pos > sim_neg).float().mean().item()
-                val_triplet_acc += triplet_acc
+                # Acumular otras métricas
+                for key, value in loss_dict.items():
+                    if key not in val_metrics:
+                        val_metrics[key] = 0
+                    if isinstance(value, torch.Tensor):
+                        val_metrics[key] += value.item()
+                    else:
+                        val_metrics[key] += value
         
         # Calcular métricas promedio
         val_loss /= len(self.val_loader)
         val_triplet_acc /= len(self.val_loader)
+        
+        for key in val_metrics:
+            val_metrics[key] /= len(self.val_loader)
         
         # Registrar métricas en wandb
         if wandb.run is not None:
             wandb.log({
                 'val_loss': val_loss,
                 'val_triplet_acc': val_triplet_acc,
+                **{f'val_{k}': v for k, v in val_metrics.items()},
                 'epoch': epoch
             })
         
@@ -210,7 +222,7 @@ class Trainer:
             'optimizer_state_dict': self.optimizer.state_dict(),
             'scheduler_state_dict': self.scheduler.state_dict(),
             'best_val_loss': self.best_val_loss,
-            'config': self.config
+            'scaler': self.scaler.state_dict()  # Guardar estado del scaler
         }
         
         # Guardar checkpoint regular
