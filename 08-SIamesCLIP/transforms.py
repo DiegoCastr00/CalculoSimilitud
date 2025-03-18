@@ -36,73 +36,92 @@ class ArtworkSimilarityDataset(Dataset):
         generated_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['generated_image'])
         negative_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['negative_image'])
         
-        # Manejo de errores para imágenes
-        try:
-            original_image = Image.open(original_img_path).convert('RGB')
-            generated_image = Image.open(generated_img_path).convert('RGB')
-            negative_image = Image.open(negative_img_path).convert('RGB')
-        except Exception as e:
-            print(f"Error loading image at index {idx}: {e}")
-            # Usar índice aleatorio diferente como fallback
-            return self.__getitem__(np.random.randint(0, len(self.data)))
+        # Control de errores con contador para evitar bucles infinitos
+        max_retries = 5
+        retry_count = 0
         
-        # Obtener descripciones
+        while retry_count < max_retries:
+            try:
+                original_image = Image.open(original_img_path).convert('RGB')
+                generated_image = Image.open(generated_img_path).convert('RGB')
+                negative_image = Image.open(negative_img_path).convert('RGB')
+                break
+            except Exception as e:
+                print(f"Error loading image at index {idx}: {e}")
+                retry_count += 1
+                idx = np.random.randint(0, len(self.data))
+                original_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['original_image'])
+                generated_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['generated_image'])
+                negative_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['negative_image'])
+                
+                if retry_count == max_retries:
+                    # Si falla después de varios intentos, crear imágenes en blanco
+                    print("Maximum retries reached. Using blank images.")
+                    original_image = Image.new('RGB', (Config.IMAGE_SIZE, Config.IMAGE_SIZE))
+                    generated_image = Image.new('RGB', (Config.IMAGE_SIZE, Config.IMAGE_SIZE))
+                    negative_image = Image.new('RGB', (Config.IMAGE_SIZE, Config.IMAGE_SIZE))
+        
+        # Inicializar muestra
         sample = {}
         
+        # Obtener descripciones
         if Config.USE_TEXT_EMBEDDINGS:
             original_desc = self.data.iloc[idx].get('description_original_paint', '')
             generated_desc = self.data.iloc[idx].get('description_generated_image', '')
             negative_desc = self.data.iloc[idx].get('description_negative_image', '')
             
-            # Evitar descripciones vacías
-            original_desc = original_desc if pd.notna(original_desc) else "A piece of artwork"
-            generated_desc = generated_desc if pd.notna(generated_desc) else "A piece of artwork"
-            negative_desc = negative_desc if pd.notna(negative_desc) else "A piece of artwork"
+            # Evitar descripciones vacías o NaN
+            original_desc = original_desc if pd.notna(original_desc) and original_desc != '' else "A piece of artwork"
+            generated_desc = generated_desc if pd.notna(generated_desc) and generated_desc != '' else "A piece of artwork"
+            negative_desc = negative_desc if pd.notna(negative_desc) and negative_desc != '' else "A piece of artwork"
             
-            # Procesar imagen+texto para CLIP
+            # Procesar cada par (imagen, texto) por separado
+            # Original
             original_inputs = self.processor(
                 text=original_desc,
                 images=original_image, 
                 return_tensors="pt", 
-                padding=True, 
-                truncation=True
+                padding="max_length", 
+                truncation=True,
+                max_length=77  # Longitud máxima para CLIP
             )
+            
+            # Generated
             generated_inputs = self.processor(
                 text=generated_desc,
                 images=generated_image, 
                 return_tensors="pt", 
-                padding=True, 
-                truncation=True
+                padding="max_length", 
+                truncation=True,
+                max_length=77
             )
+            
+            # Negative
             negative_inputs = self.processor(
                 text=negative_desc,
                 images=negative_image, 
                 return_tensors="pt", 
-                padding=True, 
-                truncation=True
+                padding="max_length", 
+                truncation=True,
+                max_length=77
             )
             
-            # Extraer valores
-            sample['original_pixel_values'] = original_inputs['pixel_values'].squeeze(0)
-            sample['generated_pixel_values'] = generated_inputs['pixel_values'].squeeze(0)
-            sample['negative_pixel_values'] = negative_inputs['pixel_values'].squeeze(0)
-            
-            sample['original_input_ids'] = original_inputs['input_ids'].squeeze(0)
-            sample['generated_input_ids'] = generated_inputs['input_ids'].squeeze(0)
-            sample['negative_input_ids'] = negative_inputs['input_ids'].squeeze(0)
-            
-            sample['original_attention_mask'] = original_inputs.get('attention_mask', torch.ones_like(original_inputs['input_ids'])).squeeze(0)
-            sample['generated_attention_mask'] = generated_inputs.get('attention_mask', torch.ones_like(generated_inputs['input_ids'])).squeeze(0)
-            sample['negative_attention_mask'] = negative_inputs.get('attention_mask', torch.ones_like(negative_inputs['input_ids'])).squeeze(0)
+            # Extraer valores para muestra
+            for prefix, inputs in zip(
+                ['original', 'generated', 'negative'],
+                [original_inputs, generated_inputs, negative_inputs]
+            ):
+                sample[f'{prefix}_pixel_values'] = inputs.pixel_values.squeeze(0)
+                sample[f'{prefix}_input_ids'] = inputs.input_ids.squeeze(0)
+                sample[f'{prefix}_attention_mask'] = inputs.attention_mask.squeeze(0)
         else:
-            # Solo procesar imágenes
-            original_inputs = self.processor(images=original_image, return_tensors="pt")
-            generated_inputs = self.processor(images=generated_image, return_tensors="pt")
-            negative_inputs = self.processor(images=negative_image, return_tensors="pt")
-            
-            sample['original_pixel_values'] = original_inputs['pixel_values'].squeeze(0)
-            sample['generated_pixel_values'] = generated_inputs['pixel_values'].squeeze(0)
-            sample['negative_pixel_values'] = negative_inputs['pixel_values'].squeeze(0)
+            # Solo procesar imágenes sin texto
+            for prefix, image in zip(
+                ['original', 'generated', 'negative'],
+                [original_image, generated_image, negative_image]
+            ):
+                inputs = self.processor(images=image, return_tensors="pt")
+                sample[f'{prefix}_pixel_values'] = inputs.pixel_values.squeeze(0)
         
         return sample
 

@@ -11,23 +11,27 @@ class ContrastiveLoss(nn.Module):
         self.temperature = temperature
         self.margin = margin
         
-    def forward(self, sim_pos, sim_neg):
+    def forward(self, sim_pos, sim_neg, temperature=None):
         """
         Calcula la pérdida contrastiva.
         
         Args:
             sim_pos: Similitud entre pares positivos [batch_size]
             sim_neg: Similitud entre pares negativos [batch_size]
+            temperature: Temperatura opcional (sobreescribe la predeterminada)
             
         Returns:
             Pérdida escalar
         """
+        # Usar temperatura proporcionada o la predeterminada
+        temp = temperature if temperature is not None else self.temperature
+        
         # Aplicar margen opcional
         sim_neg = sim_neg - self.margin
         
         # Escalamiento con temperatura
-        sim_pos = sim_pos / self.temperature
-        sim_neg = sim_neg / self.temperature
+        sim_pos = sim_pos / temp
+        sim_neg = sim_neg / temp
         
         # Implementación de la pérdida contrastiva con InfoNCE
         numerator = torch.exp(sim_pos)
@@ -40,10 +44,11 @@ class MultimodalContrastiveLoss(nn.Module):
     """
     Pérdida contrastiva combinando imágenes y texto.
     """
-    def __init__(self, temperature=0.07, alpha=0.5):
+    def __init__(self, temperature=0.07, alpha_text=0.3, alpha_cross=0.3):
         super(MultimodalContrastiveLoss, self).__init__()
         self.temperature = temperature
-        self.alpha = alpha  # Ponderación entre pérdida de imagen y texto
+        self.alpha_text = alpha_text    # Ponderación para pérdida de texto
+        self.alpha_cross = alpha_cross  # Ponderación para pérdida cruzada
         self.contrastive_loss = ContrastiveLoss(temperature)
         
     def forward(self, outputs):
@@ -56,10 +61,14 @@ class MultimodalContrastiveLoss(nn.Module):
         Returns:
             Pérdida escalar y métricas adicionales
         """
+        # Extraer temperatura dinámica si está disponible en el modelo
+        temperature = outputs.get('temperature', self.temperature)
+        
         # Pérdida principal (ya combina imagen y texto si están disponibles)
         main_loss = self.contrastive_loss(
             outputs['similarities']['positive'],
-            outputs['similarities']['negative']
+            outputs['similarities']['negative'],
+            temperature=temperature
         )
         
         # Calcular accuracy de triplete (cuántas veces sim_pos > sim_neg)
@@ -67,6 +76,7 @@ class MultimodalContrastiveLoss(nn.Module):
         
         result = {
             'total_loss': main_loss,
+            'image_loss': main_loss,  # Para consistencia en logs
             'triplet_accuracy': triplet_acc
         }
         
@@ -85,36 +95,55 @@ class MultimodalContrastiveLoss(nn.Module):
             )
             
             # Pérdida para texto
-            text_loss = self.contrastive_loss(text_sim_pos, text_sim_neg)
+            text_loss = self.contrastive_loss(text_sim_pos, text_sim_neg, temperature=temperature)
             
             # Similitudes cruzadas (imagen-texto)
-            cross_sim_pos = F.cosine_similarity(
+            i2t_sim_pos = F.cosine_similarity(
                 outputs['embeddings']['original'], 
                 outputs['embeddings']['text']['generated'], 
                 dim=1
             )
-            cross_sim_neg = F.cosine_similarity(
+            i2t_sim_neg = F.cosine_similarity(
                 outputs['embeddings']['original'], 
                 outputs['embeddings']['text']['negative'], 
                 dim=1
             )
             
-            # Pérdida cruzada
-            cross_loss = self.contrastive_loss(cross_sim_pos, cross_sim_neg)
+            # Similitudes cruzadas (texto-imagen) - añadimos este componente
+            t2i_sim_pos = F.cosine_similarity(
+                outputs['embeddings']['text']['original'], 
+                outputs['embeddings']['generated'], 
+                dim=1
+            )
+            t2i_sim_neg = F.cosine_similarity(
+                outputs['embeddings']['text']['original'], 
+                outputs['embeddings']['negative'], 
+                dim=1
+            )
             
-            # Accuracy de triplete para texto y cruzada
+            # Pérdidas cruzadas
+            i2t_loss = self.contrastive_loss(i2t_sim_pos, i2t_sim_neg, temperature=temperature)
+            t2i_loss = self.contrastive_loss(t2i_sim_pos, t2i_sim_neg, temperature=temperature)
+            cross_loss = (i2t_loss + t2i_loss) / 2  # Promedio de ambas direcciones
+            
+            # Accuracies de triplete para texto y cruzadas
             text_acc = (text_sim_pos > text_sim_neg).float().mean()
-            cross_acc = (cross_sim_pos > cross_sim_neg).float().mean()
+            i2t_acc = (i2t_sim_pos > i2t_sim_neg).float().mean()
+            t2i_acc = (t2i_sim_pos > t2i_sim_neg).float().mean()
+            cross_acc = (i2t_acc + t2i_acc) / 2  # Promedio de ambas direcciones
             
-            # Pérdida total con componentes adicionales
-            total_loss = main_loss + self.alpha * (text_loss + cross_loss)
+            # Pérdida total con componentes ponderados separadamente
+            total_loss = main_loss + self.alpha_text * text_loss + self.alpha_cross * cross_loss
             
             result.update({
                 'total_loss': total_loss,
-                'image_loss': main_loss,
                 'text_loss': text_loss,
+                'i2t_loss': i2t_loss,
+                't2i_loss': t2i_loss,
                 'cross_loss': cross_loss,
                 'text_accuracy': text_acc,
+                'i2t_accuracy': i2t_acc,
+                't2i_accuracy': t2i_acc,
                 'cross_accuracy': cross_acc
             })
         

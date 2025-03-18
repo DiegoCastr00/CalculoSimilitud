@@ -87,6 +87,8 @@ class SiameseCLIPModel(nn.Module):
         
         # Parámetro de temperatura para la función de pérdida
         self.temperature = nn.Parameter(torch.tensor(config.TEMPERATURE))
+        self.register_buffer('min_temperature', torch.tensor(0.01))
+
         
     def encode_image(self, pixel_values):
         """
@@ -163,9 +165,21 @@ class SiameseCLIPModel(nn.Module):
             )
             
             # Combinar embeddings de imagen y texto (promedio simple)
-            original_embedding = (original_embedding + original_text_embedding) / 2
-            generated_embedding = (generated_embedding + generated_text_embedding) / 2
-            negative_embedding = (negative_embedding + negative_text_embedding) / 2
+            if not hasattr(self, 'fusion_layer'):
+                self.fusion_layer = nn.Sequential(
+                    nn.Linear(self.embed_dim * 2, self.embed_dim),
+                    nn.GELU(),
+                    nn.Dropout(Config.DROPOUT),
+                    nn.Linear(self.embed_dim, self.embed_dim),
+                ).to(original_embedding.device)
+
+            original_combined = torch.cat([original_embedding, original_text_embedding], dim=1)
+            generated_combined = torch.cat([generated_embedding, generated_text_embedding], dim=1)
+            negative_combined = torch.cat([negative_embedding, negative_text_embedding], dim=1)
+
+            original_embedding = F.normalize(self.fusion_layer(original_combined), p=2, dim=1)
+            generated_embedding = F.normalize(self.fusion_layer(generated_combined), p=2, dim=1)
+            negative_embedding = F.normalize(self.fusion_layer(negative_combined), p=2, dim=1)
             
             text_embeddings = {
                 'original': original_text_embedding,
@@ -177,6 +191,9 @@ class SiameseCLIPModel(nn.Module):
         sim_pos = F.cosine_similarity(original_embedding, generated_embedding, dim=1)
         sim_neg = F.cosine_similarity(original_embedding, negative_embedding, dim=1)
         
+        temperature = torch.max(self.temperature, self.min_temperature)
+
+        
         return {
             'embeddings': {
                 'original': original_embedding,
@@ -187,5 +204,46 @@ class SiameseCLIPModel(nn.Module):
             'similarities': {
                 'positive': sim_pos,
                 'negative': sim_neg
-            }
+            },
+            'temperature': temperature
+
         }
+    def calculate_similarity(self, image1_pixel_values, image2_pixel_values, 
+                            text1_input_ids=None, text2_input_ids=None,
+                            text1_attention_mask=None, text2_attention_mask=None):
+        """
+        Calcula similitud entre dos imágenes (y opcionalmente sus textos).
+        
+        Args:
+            image1_pixel_values, image2_pixel_values: Tensores de imágenes procesadas
+            text1_input_ids, text2_input_ids: IDs de tokens de texto (opcional)
+            text1_attention_mask, text2_attention_mask: Máscaras de atención (opcional)
+            
+        Returns:
+            Similitud del coseno entre los embeddings [-1, 1]
+        """
+        # Codificar imágenes
+        embedding1 = self.encode_image(image1_pixel_values)
+        embedding2 = self.encode_image(image2_pixel_values)
+        
+        # Si se proporcionan textos, también los codificamos y combinamos
+        if text1_input_ids is not None and text2_input_ids is not None and Config.USE_TEXT_EMBEDDINGS:
+            text_embedding1 = self.encode_text(text1_input_ids, text1_attention_mask)
+            text_embedding2 = self.encode_text(text2_input_ids, text2_attention_mask)
+            
+            # Usar la capa de fusión para combinar si existe
+            if hasattr(self, 'fusion_layer'):
+                combined1 = torch.cat([embedding1, text_embedding1], dim=1)
+                combined2 = torch.cat([embedding2, text_embedding2], dim=1)
+                
+                embedding1 = F.normalize(self.fusion_layer(combined1), p=2, dim=1)
+                embedding2 = F.normalize(self.fusion_layer(combined2), p=2, dim=1)
+            else:
+                # Fallback al promedio simple
+                embedding1 = F.normalize((embedding1 + text_embedding1) / 2, p=2, dim=1)
+                embedding2 = F.normalize((embedding2 + text_embedding2) / 2, p=2, dim=1)
+        
+        # Calcular similitud del coseno
+        similarity = F.cosine_similarity(embedding1, embedding2, dim=1)
+        
+        return similarity
