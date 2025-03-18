@@ -35,6 +35,184 @@ class ModelEvaluator:
         self.results_dir = Path("results")
         os.makedirs(self.results_dir, exist_ok=True)
     
+    def calculate_distribution_metrics(self, metrics):
+        """
+        Calcula métricas de separación entre distribuciones de similitud.
+        """
+        similar = np.array(metrics['results_df']['similar_pair'])
+        dissimilar = np.array(metrics['results_df']['dissimilar_pair'])
+        
+        # Distancia entre medias
+        mean_separation = metrics['mean_similar'] - metrics['mean_dissimilar']
+        
+        # Coeficiente de separabilidad (d-prime)
+        pooled_std = np.sqrt((metrics['std_similar']**2 + metrics['std_dissimilar']**2) / 2)
+        d_prime = mean_separation / pooled_std if pooled_std > 0 else float('inf')
+        
+        # Área bajo la curva (AUC) aproximada
+        from sklearn.metrics import roc_auc_score
+        y_true = np.concatenate([np.ones(len(similar)), np.zeros(len(dissimilar))])
+        y_score = np.concatenate([similar, dissimilar])
+        auc = roc_auc_score(y_true, y_score)
+        
+        return {
+            'mean_separation': mean_separation,
+            'd_prime': d_prime,
+            'auc': auc
+        }
+    def find_optimal_threshold(self, metrics):
+        """
+        Encuentra el umbral óptimo para clasificar pares similares vs. disimilares.
+        """
+        from sklearn.metrics import precision_recall_curve, f1_score
+        
+        similar = np.array(metrics['results_df']['similar_pair'])
+        dissimilar = np.array(metrics['results_df']['dissimilar_pair'])
+        
+        # Crear valores de verdad y puntuaciones
+        y_true = np.concatenate([np.ones(len(similar)), np.zeros(len(dissimilar))])
+        y_score = np.concatenate([similar, dissimilar])
+        
+        # Calcular precision-recall para diferentes umbrales
+        precision, recall, thresholds = precision_recall_curve(y_true, y_score)
+        
+        # Calcular F1 score para cada umbral
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-10)
+        
+        # Encontrar umbral óptimo
+        optimal_idx = np.argmax(f1_scores)
+        optimal_threshold = thresholds[optimal_idx] if optimal_idx < len(thresholds) else 0.5
+        
+        # Calcular métricas con umbral óptimo
+        y_pred = (y_score >= optimal_threshold).astype(int)
+        optimal_f1 = f1_score(y_true, y_pred)
+        
+        return {
+            'optimal_threshold': optimal_threshold,
+            'optimal_f1': optimal_f1
+        }
+    def plot_roc_and_pr_curves(self, metrics):
+        """
+        Genera curvas ROC y Precision-Recall.
+        """
+        from sklearn.metrics import roc_curve, precision_recall_curve, auc
+        
+        similar = np.array(metrics['results_df']['similar_pair'])
+        dissimilar = np.array(metrics['results_df']['dissimilar_pair'])
+        
+        # Preparar datos
+        y_true = np.concatenate([np.ones(len(similar)), np.zeros(len(dissimilar))])
+        y_score = np.concatenate([similar, dissimilar])
+        
+        # Calcular curva ROC
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        roc_auc = auc(fpr, tpr)
+        
+        # Calcular curva Precision-Recall
+        precision, recall, _ = precision_recall_curve(y_true, y_score)
+        pr_auc = auc(recall, precision)
+        
+        # Graficar curva ROC
+        plt.figure(figsize=(10, 5))
+        plt.subplot(1, 2, 1)
+        plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+        plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate')
+        plt.ylabel('True Positive Rate')
+        plt.title('Receiver Operating Characteristic')
+        plt.legend(loc="lower right")
+        
+        # Graficar curva Precision-Recall
+        plt.subplot(1, 2, 2)
+        plt.plot(recall, precision, color='blue', lw=2, label=f'PR curve (area = {pr_auc:.2f})')
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve')
+        plt.legend(loc="lower left")
+        
+        plt.tight_layout()
+        plt.savefig(self.results_dir / "roc_pr_curves.png", dpi=300)
+        plt.close()
+        
+        return {'roc_auc': roc_auc, 'pr_auc': pr_auc}
+
+    def analyze_edge_cases(self, dataloader, n_examples=5):
+        """
+        Analiza los ejemplos en la frontera (más difíciles de clasificar).
+        """
+        from torchvision.utils import save_image
+        edge_cases_dir = self.results_dir / "edge_cases"
+        os.makedirs(edge_cases_dir, exist_ok=True)
+        
+        all_results = []
+        
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(dataloader, desc="Finding edge cases")):
+                # Procesar batch
+                original_image = batch['original_image'].to(self.device)
+                generated_image = batch['generated_image'].to(self.device)
+                negative_image = batch['negative_image'].to(self.device)
+                
+                # Obtener paths de imágenes
+                original_paths = batch['original_path']
+                generated_paths = batch['generated_path']
+                negative_paths = batch['negative_path']
+                
+                # Forward pass
+                outputs = self.model(original_image, generated_image, negative_image)
+                
+                # Obtener similitudes
+                sim_pos = outputs['similarities']['positive']
+                sim_neg = outputs['similarities']['negative']
+                
+                # Normalizar a [0, 1]
+                sim_pos = (sim_pos + 1) / 2
+                sim_neg = (sim_neg + 1) / 2
+                
+                # Calcular diferencia
+                diff = sim_pos - sim_neg
+                
+                # Guardar resultados
+                for j in range(len(original_image)):
+                    all_results.append({
+                        'original_path': original_paths[j],
+                        'generated_path': generated_paths[j],
+                        'negative_path': negative_paths[j],
+                        'sim_pos': sim_pos[j].item(),
+                        'sim_neg': sim_neg[j].item(),
+                        'diff': diff[j].item()
+                    })
+        
+        # Ordenar por diferencia (casos más difíciles primero)
+        all_results.sort(key=lambda x: abs(x['diff']))
+        
+        # Guardar ejemplos más difíciles
+        for i, case in enumerate(all_results[:n_examples]):
+            # Guardar información
+            with open(edge_cases_dir / f"case_{i+1}_info.txt", 'w') as f:
+                f.write(f"Original: {case['original_path']}\n")
+                f.write(f"Generated: {case['generated_path']}\n")
+                f.write(f"Negative: {case['negative_path']}\n")
+                f.write(f"Similarity (original-generated): {case['sim_pos']:.4f}\n")
+                f.write(f"Similarity (original-negative): {case['sim_neg']:.4f}\n")
+                f.write(f"Difference: {case['diff']:.4f}\n")
+            
+            # Guardar imágenes
+            from PIL import Image
+            original = Image.open(case['original_path']).convert('RGB')
+            generated = Image.open(case['generated_path']).convert('RGB')
+            negative = Image.open(case['negative_path']).convert('RGB')
+            
+            original.save(edge_cases_dir / f"case_{i+1}_original.jpg")
+            generated.save(edge_cases_dir / f"case_{i+1}_generated.jpg")
+            negative.save(edge_cases_dir / f"case_{i+1}_negative.jpg")
+        
+        return all_results[:n_examples]
+
     def compute_similarity(self, img1_path, img2_path):
         """
         Calcula la similitud entre dos imágenes.
@@ -224,14 +402,12 @@ def main():
     parser.add_argument("--data_csv", type=str, default=None, help="Ruta al CSV de evaluación")
     parser.add_argument("--batch_size", type=int, default=32, help="Tamaño del batch")
     parser.add_argument("--sample_images", type=str, default=None, help="Ruta al CSV con imágenes para matriz de similitud")
+    parser.add_argument("--analyze_edge_cases", action="store_true", help="Analizar casos difíciles")
+    parser.add_argument("--eval_consistency", action="store_true", help="Evaluar consistencia de métricas")
     
     args = parser.parse_args()
     
-    # Actualizar configuración
-    if args.data_csv:
-        Config.DATA_CSV = args.data_csv
-    if args.batch_size:
-        Config.BATCH_SIZE = args.batch_size
+    # Actualizar configuración...
     
     # Inicializar evaluador
     evaluator = ModelEvaluator(args.checkpoint, Config)
@@ -248,14 +424,46 @@ def main():
     print("Evaluando modelo en el conjunto de datos...")
     metrics = evaluator.evaluate_dataset(dataloader)
     
-    # Imprimir métricas
+    # Imprimir métricas básicas
     print(f"Triplet Accuracy: {metrics['triplet_accuracy']:.4f}")
     print(f"Mean Similar Pair Similarity: {metrics['mean_similar']:.4f} ± {metrics['std_similar']:.4f}")
     print(f"Mean Dissimilar Pair Similarity: {metrics['mean_dissimilar']:.4f} ± {metrics['std_dissimilar']:.4f}")
     
+    # Calcular métricas de distribución
+    print("Calculando métricas de separación de distribuciones...")
+    dist_metrics = evaluator.calculate_distribution_metrics(metrics)
+    print(f"Mean Separation: {dist_metrics['mean_separation']:.4f}")
+    print(f"D-prime: {dist_metrics['d_prime']:.4f}")
+    print(f"AUC: {dist_metrics['auc']:.4f}")
+    
+    # Encontrar umbral óptimo
+    print("Calculando umbral óptimo...")
+    threshold_metrics = evaluator.find_optimal_threshold(metrics)
+    print(f"Optimal Threshold: {threshold_metrics['optimal_threshold']:.4f}")
+    print(f"Optimal F1 Score: {threshold_metrics['optimal_f1']:.4f}")
+    
+    # Generar curvas ROC y PR
+    print("Generando curvas ROC y Precision-Recall...")
+    curve_metrics = evaluator.plot_roc_and_pr_curves(metrics)
+    print(f"ROC AUC: {curve_metrics['roc_auc']:.4f}")
+    print(f"PR AUC: {curve_metrics['pr_auc']:.4f}")
+    
     # Generar gráficos de distribución
     print("Generando gráficos de distribución...")
     evaluator.plot_similarity_distributions(metrics)
+    
+    # Analizar casos difíciles
+    if args.analyze_edge_cases:
+        print("Analizando casos difíciles...")
+        edge_cases = evaluator.analyze_edge_cases(dataloader)
+    
+    # Evaluar consistencia
+    if args.eval_consistency:
+        print("Evaluando consistencia frente a perturbaciones...")
+        consistency_metrics = evaluator.evaluate_metric_consistency(dataloader)
+        print("Coeficientes de variación:")
+        for perturb, cv in consistency_metrics['coefficient_of_variation'].items():
+            print(f"  {perturb}: {cv:.4f}")
     
     # Generar matriz de similitud si se proporciona una lista de imágenes
     if args.sample_images:
@@ -265,6 +473,23 @@ def main():
         labels = sample_df['label'] if 'label' in sample_df.columns else None
         
         evaluator.generate_similarity_matrix(image_paths, labels)
+    
+    # Guardar todas las métricas
+    print("Guardando métricas completas...")
+    all_metrics = {
+        **metrics,
+        'distribution_metrics': dist_metrics,
+        'threshold_metrics': threshold_metrics,
+        'curve_metrics': curve_metrics
+    }
+    
+    # Eliminar DataFrame para poder guardar en JSON
+    if 'results_df' in all_metrics:
+        del all_metrics['results_df']
+    
+    import json
+    with open(evaluator.results_dir / "all_metrics.json", 'w') as f:
+        json.dump(all_metrics, f, indent=2)
 
 if __name__ == "__main__":
     main()
