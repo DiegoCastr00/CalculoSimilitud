@@ -1,13 +1,20 @@
 import os
 from pathlib import Path
 import torch
+from datetime import datetime
 
 class Config:
     # Rutas
     DATA_ROOT = Path("./")  # Directorio raíz del proyecto
     IMAGES_DIR = DATA_ROOT / "imagenes"  # Carpeta de imágenes
-    CHECKPOINT_DIR = Path("checkpoints")
-    LOGS_DIR = Path("logs")
+    
+    # Timestamp para identificar la ejecución actual
+    RUN_TIMESTAMP = datetime.now().strftime('%Y%m%d-%H%M%S')
+    
+    # Directorios para checkpoints y logs con timestamp para evitar sobrescrituras
+    CHECKPOINT_DIR = Path(f"checkpoints_{RUN_TIMESTAMP}")
+    LOGS_DIR = Path(f"logs_{RUN_TIMESTAMP}")
+    LOG_FILE = LOGS_DIR / f"training_{RUN_TIMESTAMP}.log"
     
     # Parámetros de procesamiento de datos
     BATCH_SIZE = 32

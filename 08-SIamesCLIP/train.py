@@ -6,6 +6,8 @@ from torch.cuda.amp import GradScaler, autocast
 import numpy as np
 import time
 import os
+import logging
+import traceback
 from tqdm import tqdm
 from pathlib import Path
 import wandb
@@ -185,17 +187,19 @@ class Trainer:
                 self.best_val_loss = val_loss
                 self.counter = 0
                 self.save_checkpoint(epoch, is_best=True)
+                logging.info(f"Nueva mejor pérdida de validación: {val_loss:.4f}. Guardando mejor modelo.")
             else:
                 # Si no hay mejora significativa, incrementar el contador
                 self.counter += 1
                 if self.counter >= self.patience:
-                    print(f"\nEarly stopping triggered after {epoch+1} épocas. No hay mejora en la pérdida de validación durante {self.patience} épocas.")
+                    logging.info(f"Early stopping triggered after {epoch+1} épocas. No hay mejora en la pérdida de validación durante {self.patience} épocas.")
                     self.early_stop = True
-                print(f"Early stopping counter: {self.counter}/{self.patience}")
+                logging.info(f"Early stopping counter: {self.counter}/{self.patience}")
         elif val_loss < self.best_val_loss:
             # Si Early Stopping está desactivado, seguir con el comportamiento normal
             self.best_val_loss = val_loss
             self.save_checkpoint(epoch, is_best=True)
+            logging.info(f"Nueva mejor pérdida de validación: {val_loss:.4f}. Guardando mejor modelo.")
             
         return val_loss, val_triplet_acc
     
@@ -230,37 +234,45 @@ class Trainer:
         """
         Entrena el modelo por el número de épocas especificado.
         """
-        print(f"Training on {self.device}")
-        print(f"Total parameters: {sum(p.numel() for p in self.model.parameters())}")
-        print(f"Trainable parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
-        
-        for epoch in range(self.config.EPOCHS):
-            start_time = time.time()
+        try:
+            logging.info(f"Training on {self.device}")
+            logging.info(f"Total parameters: {sum(p.numel() for p in self.model.parameters())}")
+            logging.info(f"Trainable parameters: {sum(p.numel() for p in self.model.parameters() if p.requires_grad)}")
+            logging.info(f"Usando {torch.cuda.device_count()} GPUs: {self.config.GPU_IDS}")
             
-            # Entrenar época
-            train_loss, train_triplet_acc = self.train_epoch(epoch)
-            
-            # Validar
-            val_loss, val_triplet_acc = self.validate(epoch)
-            
-            # Calcular tiempo
-            epoch_time = time.time() - start_time
-            
-            # Imprimir métricas
-            print(f"Epoch {epoch+1}/{self.config.EPOCHS} | "
-                  f"Train Loss: {train_loss:.4f} | "
-                  f"Train Triplet Acc: {train_triplet_acc:.4f} | "
-                  f"Val Loss: {val_loss:.4f} | "
-                  f"Val Triplet Acc: {val_triplet_acc:.4f} | "
-                  f"Time: {epoch_time:.2f}s")
-            
-            # Guardar checkpoint regular
-            if (epoch + 1) % self.config.SAVE_EVERY == 0:
-                self.save_checkpoint(epoch)
+            for epoch in range(self.config.EPOCHS):
+                start_time = time.time()
                 
-            # Verificar si debemos detener el entrenamiento por Early Stopping
-            if self.early_stop:
-                print(f"\nEntrenamiento detenido tempranamente en la época {epoch+1}")
-                break
-        
-        print("Training complete!")
+                # Entrenar época
+                train_loss, train_triplet_acc = self.train_epoch(epoch)
+                
+                # Validar
+                val_loss, val_triplet_acc = self.validate(epoch)
+                
+                # Calcular tiempo
+                epoch_time = time.time() - start_time
+                
+                # Registrar métricas
+                log_msg = (f"Epoch {epoch+1}/{self.config.EPOCHS} | "
+                          f"Train Loss: {train_loss:.4f} | "
+                          f"Train Triplet Acc: {train_triplet_acc:.4f} | "
+                          f"Val Loss: {val_loss:.4f} | "
+                          f"Val Triplet Acc: {val_triplet_acc:.4f} | "
+                          f"Time: {epoch_time:.2f}s")
+                logging.info(log_msg)
+                
+                # Guardar checkpoint regular
+                if (epoch + 1) % self.config.SAVE_EVERY == 0:
+                    self.save_checkpoint(epoch)
+                    logging.info(f"Guardado checkpoint de la época {epoch+1}")
+                
+                # Verificar si debemos detener el entrenamiento por Early Stopping
+                if self.early_stop:
+                    logging.info(f"Entrenamiento detenido tempranamente en la época {epoch+1}")
+                    break
+            
+            logging.info("Entrenamiento completado con éxito!")
+        except Exception as e:
+            logging.error(f"Error durante el entrenamiento: {str(e)}")
+            logging.error(traceback.format_exc())
+            raise
