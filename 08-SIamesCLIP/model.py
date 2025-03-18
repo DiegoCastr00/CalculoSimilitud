@@ -88,6 +88,15 @@ class SiameseCLIPModel(nn.Module):
         # Parámetro de temperatura para la función de pérdida
         self.temperature = nn.Parameter(torch.tensor(config.TEMPERATURE))
         self.register_buffer('min_temperature', torch.tensor(0.01))
+        
+        # Inicializar capa de fusión durante la creación del modelo
+        if config.USE_TEXT_EMBEDDINGS:
+            self.fusion_layer = nn.Sequential(
+                nn.Linear(self.embed_dim * 2, self.embed_dim),
+                nn.GELU(),
+                nn.Dropout(config.DROPOUT),
+                nn.Linear(self.embed_dim, self.embed_dim),
+            )
 
         
     def encode_image(self, pixel_values):
@@ -164,22 +173,22 @@ class SiameseCLIPModel(nn.Module):
                 batch.get('negative_attention_mask')
             )
             
-            # Combinar embeddings de imagen y texto (promedio simple)
-            if not hasattr(self, 'fusion_layer'):
-                self.fusion_layer = nn.Sequential(
-                    nn.Linear(self.embed_dim * 2, self.embed_dim),
-                    nn.GELU(),
-                    nn.Dropout(Config.DROPOUT),
-                    nn.Linear(self.embed_dim, self.embed_dim),
-                ).to(original_embedding.device)
+            # Asegurar que la capa de fusión esté en el mismo dispositivo que los embeddings
+            if hasattr(self, 'fusion_layer'):
+                self.fusion_layer = self.fusion_layer.to(original_embedding.device)
+                
+                original_combined = torch.cat([original_embedding, original_text_embedding], dim=1)
+                generated_combined = torch.cat([generated_embedding, generated_text_embedding], dim=1)
+                negative_combined = torch.cat([negative_embedding, negative_text_embedding], dim=1)
 
-            original_combined = torch.cat([original_embedding, original_text_embedding], dim=1)
-            generated_combined = torch.cat([generated_embedding, generated_text_embedding], dim=1)
-            negative_combined = torch.cat([negative_embedding, negative_text_embedding], dim=1)
-
-            original_embedding = F.normalize(self.fusion_layer(original_combined), p=2, dim=1)
-            generated_embedding = F.normalize(self.fusion_layer(generated_combined), p=2, dim=1)
-            negative_embedding = F.normalize(self.fusion_layer(negative_combined), p=2, dim=1)
+                original_embedding = F.normalize(self.fusion_layer(original_combined), p=2, dim=1)
+                generated_embedding = F.normalize(self.fusion_layer(generated_combined), p=2, dim=1)
+                negative_embedding = F.normalize(self.fusion_layer(negative_combined), p=2, dim=1)
+            else:
+                # Fallback al promedio simple cuando no existe la capa de fusión
+                original_embedding = F.normalize((original_embedding + original_text_embedding) / 2, p=2, dim=1)
+                generated_embedding = F.normalize((generated_embedding + generated_text_embedding) / 2, p=2, dim=1)
+                negative_embedding = F.normalize((negative_embedding + negative_text_embedding) / 2, p=2, dim=1)
             
             text_embeddings = {
                 'original': original_text_embedding,
@@ -231,8 +240,9 @@ class SiameseCLIPModel(nn.Module):
             text_embedding1 = self.encode_text(text1_input_ids, text1_attention_mask)
             text_embedding2 = self.encode_text(text2_input_ids, text2_attention_mask)
             
-            # Usar la capa de fusión para combinar si existe
+            # Asegurar que la capa de fusión esté en el mismo dispositivo que los embeddings
             if hasattr(self, 'fusion_layer'):
+                self.fusion_layer = self.fusion_layer.to(embedding1.device)
                 combined1 = torch.cat([embedding1, text_embedding1], dim=1)
                 combined2 = torch.cat([embedding2, text_embedding2], dim=1)
                 

@@ -83,25 +83,8 @@ class Trainer:
             self.optimizer.zero_grad()
             
             with autocast():
-                # Preparar entradas según el formato del dataset
-                inputs = {
-                    'original_pixel_values': batch['original_pixel_values'],
-                    'generated_pixel_values': batch['generated_pixel_values'],
-                    'negative_pixel_values': batch['negative_pixel_values']
-                }
-                
-                # Añadir tokens de texto si están disponibles
-                if self.config.USE_TEXT_EMBEDDINGS:
-                    inputs.update({
-                        'original_input_ids': batch['original_input_ids'],
-                        'generated_input_ids': batch['generated_input_ids'],
-                        'negative_input_ids': batch['negative_input_ids'],
-                        'original_attention_mask': batch['original_attention_mask'],
-                        'generated_attention_mask': batch['generated_attention_mask'],
-                        'negative_attention_mask': batch['negative_attention_mask']
-                    })
-                
-                outputs = self.model(**inputs)
+                # Pasar el batch completo al modelo en lugar de desempaquetar los inputs
+                outputs = self.model(batch)
                 loss_dict = self.criterion(outputs)
                 loss = loss_dict['total_loss']
             
@@ -151,26 +134,9 @@ class Trainer:
                     if isinstance(batch[key], torch.Tensor):
                         batch[key] = batch[key].to(self.device)
                 
-                # Preparar entradas según el formato del dataset
-                inputs = {
-                    'original_pixel_values': batch['original_pixel_values'],
-                    'generated_pixel_values': batch['generated_pixel_values'],
-                    'negative_pixel_values': batch['negative_pixel_values']
-                }
-                
-                # Añadir tokens de texto si están disponibles
-                if self.config.USE_TEXT_EMBEDDINGS:
-                    inputs.update({
-                        'original_input_ids': batch['original_input_ids'],
-                        'generated_input_ids': batch['generated_input_ids'],
-                        'negative_input_ids': batch['negative_input_ids'],
-                        'original_attention_mask': batch['original_attention_mask'],
-                        'generated_attention_mask': batch['generated_attention_mask'],
-                        'negative_attention_mask': batch['negative_attention_mask']
-                    })
-                
+                # Pasar el batch completo al modelo en lugar de desempaquetar los inputs
                 # Forward pass
-                outputs = self.model(**inputs)
+                outputs = self.model(batch)
                 loss_dict = self.criterion(outputs)
                 
                 # Actualizar métricas

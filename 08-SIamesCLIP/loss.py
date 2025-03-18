@@ -61,6 +61,13 @@ class MultimodalContrastiveLoss(nn.Module):
         Returns:
             Pérdida escalar y métricas adicionales
         """
+        # Verificar que el diccionario de salida tenga la estructura esperada
+        if not isinstance(outputs, dict) or 'similarities' not in outputs or 'embeddings' not in outputs:
+            raise ValueError("El output del modelo debe ser un diccionario con claves 'similarities' y 'embeddings'")
+            
+        if not isinstance(outputs['similarities'], dict) or 'positive' not in outputs['similarities'] or 'negative' not in outputs['similarities']:
+            raise ValueError("outputs['similarities'] debe ser un diccionario con claves 'positive' y 'negative'")
+            
         # Extraer temperatura dinámica si está disponible en el modelo
         temperature = outputs.get('temperature', self.temperature)
         
@@ -80,8 +87,21 @@ class MultimodalContrastiveLoss(nn.Module):
             'triplet_accuracy': triplet_acc
         }
         
-        # Si hay embeddings de texto separados, podemos calcular pérdidas adicionales
-        if 'text' in outputs['embeddings'] and outputs['embeddings']['text'] is not None:
+        # Validación más estricta para los embeddings de texto antes de calcular pérdidas adicionales
+        has_valid_text_embeddings = (
+            'text' in outputs['embeddings'] and 
+            outputs['embeddings']['text'] is not None and
+            isinstance(outputs['embeddings']['text'], dict) and
+            'original' in outputs['embeddings']['text'] and
+            'generated' in outputs['embeddings']['text'] and
+            'negative' in outputs['embeddings']['text'] and
+            outputs['embeddings']['text']['original'] is not None and
+            outputs['embeddings']['text']['generated'] is not None and
+            outputs['embeddings']['text']['negative'] is not None
+        )
+        
+        # Si hay embeddings de texto válidos, podemos calcular pérdidas adicionales
+        if has_valid_text_embeddings:
             # Similitudes entre embeddings de texto
             text_sim_pos = F.cosine_similarity(
                 outputs['embeddings']['text']['original'], 
