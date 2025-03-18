@@ -63,6 +63,13 @@ class Trainer:
         # Inicializar métricas
         self.best_val_loss = float('inf')
         
+        # Inicializar variables para Early Stopping
+        self.early_stopping_enabled = config.EARLY_STOPPING
+        self.patience = config.PATIENCE
+        self.min_delta = config.MIN_DELTA
+        self.counter = 0
+        self.early_stop = False
+        
     def train_epoch(self, epoch):
         """
         Entrena el modelo por una época.
@@ -171,8 +178,22 @@ class Trainer:
         # Actualizar scheduler
         self.scheduler.step(val_loss)
         
-        # Guardar mejor modelo
-        if val_loss < self.best_val_loss:
+        # Lógica de Early Stopping
+        if self.early_stopping_enabled:
+            if val_loss < (self.best_val_loss - self.min_delta):
+                # Si hay una mejora significativa, resetear el contador
+                self.best_val_loss = val_loss
+                self.counter = 0
+                self.save_checkpoint(epoch, is_best=True)
+            else:
+                # Si no hay mejora significativa, incrementar el contador
+                self.counter += 1
+                if self.counter >= self.patience:
+                    print(f"\nEarly stopping triggered after {epoch+1} épocas. No hay mejora en la pérdida de validación durante {self.patience} épocas.")
+                    self.early_stop = True
+                print(f"Early stopping counter: {self.counter}/{self.patience}")
+        elif val_loss < self.best_val_loss:
+            # Si Early Stopping está desactivado, seguir con el comportamiento normal
             self.best_val_loss = val_loss
             self.save_checkpoint(epoch, is_best=True)
             
@@ -236,5 +257,10 @@ class Trainer:
             # Guardar checkpoint regular
             if (epoch + 1) % self.config.SAVE_EVERY == 0:
                 self.save_checkpoint(epoch)
+                
+            # Verificar si debemos detener el entrenamiento por Early Stopping
+            if self.early_stop:
+                print(f"\nEntrenamiento detenido tempranamente en la época {epoch+1}")
+                break
         
         print("Training complete!")

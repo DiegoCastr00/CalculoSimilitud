@@ -32,9 +32,9 @@ class ArtworkSimilarityDataset(Dataset):
             idx = idx.tolist()
         
         # Obtener rutas de imágenes
-        original_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['original_image'])
-        generated_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['generated_image'])
-        negative_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['negative_image'])
+        original_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['original_image'])
+        generated_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['generated_image'])
+        negative_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['negative_image'])
         
         # Control de errores con contador para evitar bucles infinitos
         max_retries = 5
@@ -50,9 +50,9 @@ class ArtworkSimilarityDataset(Dataset):
                 print(f"Error loading image at index {idx}: {e}")
                 retry_count += 1
                 idx = np.random.randint(0, len(self.data))
-                original_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['original_image'])
-                generated_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['generated_image'])
-                negative_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['negative_image'])
+                original_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['original_image'])
+                generated_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['generated_image'])
+                negative_img_path = os.path.join(Config.IMAGES_DIR, self.data.iloc[idx]['negative_image'])
                 
                 if retry_count == max_retries:
                     # Si falla después de varios intentos, crear imágenes en blanco

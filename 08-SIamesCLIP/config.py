@@ -4,7 +4,8 @@ import torch
 
 class Config:
     # Rutas
-    DATA_ROOT = Path("./")  # Ajusta esto a tu ruta real
+    DATA_ROOT = Path("./")  # Directorio raíz del proyecto
+    IMAGES_DIR = DATA_ROOT / "imagenes"  # Carpeta de imágenes
     CHECKPOINT_DIR = Path("checkpoints")
     LOGS_DIR = Path("logs")
     
@@ -42,6 +43,11 @@ class Config:
     
     # Parámetros de validación
     VAL_SPLIT = 0.2  # 20% para validación
+    
+    # Parámetros de Early Stopping
+    EARLY_STOPPING = True  # Activar/desactivar early stopping
+    PATIENCE = 5  # Número de épocas a esperar antes de detener el entrenamiento
+    MIN_DELTA = 0.001  # Cambio mínimo en la métrica para considerarla una mejora
     
     # Configuración para text embeddings
     USE_TEXT_EMBEDDINGS = True  # Si usaremos las descripciones de BLIP2
