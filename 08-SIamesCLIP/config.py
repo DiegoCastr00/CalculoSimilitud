@@ -4,7 +4,7 @@ import torch
 
 class Config:
     # Rutas
-    DATA_ROOT = Path("/path/to/data")  # Ajusta esto a tu ruta real
+    DATA_ROOT = Path("./")  # Ajusta esto a tu ruta real
     CHECKPOINT_DIR = Path("checkpoints")
     LOGS_DIR = Path("logs")
     
