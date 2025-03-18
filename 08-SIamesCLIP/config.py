@@ -41,7 +41,7 @@ class Config:
     SAVE_EVERY = 5
     
     # Parámetros de validación
-    VAL_SPLIT = 0.1  # 10% para validación
+    VAL_SPLIT = 0.2  # 10% para validación
     
     # Configuración para text embeddings
     USE_TEXT_EMBEDDINGS = True  # Si usaremos las descripciones de BLIP2

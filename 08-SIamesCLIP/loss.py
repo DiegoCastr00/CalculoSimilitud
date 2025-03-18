@@ -22,43 +22,19 @@ class ContrastiveLoss(nn.Module):
         Returns:
             Pérdida escalar
         """
+        # Aplicar margen opcional
+        sim_neg = sim_neg - self.margin
+        
         # Escalamiento con temperatura
         sim_pos = sim_pos / self.temperature
         sim_neg = sim_neg / self.temperature
         
         # Implementación de la pérdida contrastiva con InfoNCE
-        # -log(exp(sim_pos/τ) / (exp(sim_pos/τ) + exp(sim_neg/τ)))
         numerator = torch.exp(sim_pos)
         denominator = numerator + torch.exp(sim_neg)
         loss = -torch.log(numerator / denominator)
         
         return loss.mean()
-
-class TripletLoss(nn.Module):
-    """
-    Implementación alternativa de la pérdida de triplete.
-    """
-    def __init__(self, margin=0.2):
-        super(TripletLoss, self).__init__()
-        self.margin = margin
-        
-    def forward(self, anchor, positive, negative):
-        """
-        Calcula la pérdida de triplete.
-        
-        Args:
-            anchor: Embeddings ancla [batch_size, embed_dim]
-            positive: Embeddings positivos [batch_size, embed_dim]
-            negative: Embeddings negativos [batch_size, embed_dim]
-            
-        Returns:
-            Pérdida escalar
-        """
-        distance_pos = (anchor - positive).pow(2).sum(1)
-        distance_neg = (anchor - negative).pow(2).sum(1)
-        losses = F.relu(distance_pos - distance_neg + self.margin)
-        
-        return losses.mean()
 
 class MultimodalContrastiveLoss(nn.Module):
     """
@@ -75,43 +51,71 @@ class MultimodalContrastiveLoss(nn.Module):
         Calcula la pérdida contrastiva multimodal.
         
         Args:
-            outputs: Diccionario con 'similarities' y posiblemente 'text_similarities'
+            outputs: Diccionario con embeddings y similitudes
             
         Returns:
-            Pérdida escalar
+            Pérdida escalar y métricas adicionales
         """
-        # Pérdida de imagen
-        image_loss = self.contrastive_loss(
+        # Pérdida principal (ya combina imagen y texto si están disponibles)
+        main_loss = self.contrastive_loss(
             outputs['similarities']['positive'],
             outputs['similarities']['negative']
         )
         
-        # Si hay embeddings de texto
-        if 'text' in outputs['embeddings'] and outputs['embeddings']['text'] is not None:
-            # Calcular similitudes texto-imagen
-            original_text = outputs['embeddings']['text']['original']
-            original_image = outputs['embeddings']['original']
-            
-            # Similitud texto-imagen para pares positivos (original-original)
-            text_image_sim = F.cosine_similarity(original_text, original_image, dim=1)
-            
-            # Similitud texto-imagen para pares negativos (original-negative)
-            negative_image = outputs['embeddings']['negative']
-            text_neg_sim = F.cosine_similarity(original_text, negative_image, dim=1)
-            
-            # Pérdida texto-imagen
-            text_loss = self.contrastive_loss(text_image_sim, text_neg_sim)
-            
-            # Combinación ponderada
-            total_loss = self.alpha * image_loss + (1 - self.alpha) * text_loss
-            
-            return {
-                'total_loss': total_loss,
-                'image_loss': image_loss,
-                'text_loss': text_loss
-            }
+        # Calcular accuracy de triplete (cuántas veces sim_pos > sim_neg)
+        triplet_acc = (outputs['similarities']['positive'] > outputs['similarities']['negative']).float().mean()
         
-        return {
-            'total_loss': image_loss,
-            'image_loss': image_loss
+        result = {
+            'total_loss': main_loss,
+            'triplet_accuracy': triplet_acc
         }
+        
+        # Si hay embeddings de texto separados, podemos calcular pérdidas adicionales
+        if 'text' in outputs['embeddings'] and outputs['embeddings']['text'] is not None:
+            # Similitudes entre embeddings de texto
+            text_sim_pos = F.cosine_similarity(
+                outputs['embeddings']['text']['original'], 
+                outputs['embeddings']['text']['generated'], 
+                dim=1
+            )
+            text_sim_neg = F.cosine_similarity(
+                outputs['embeddings']['text']['original'], 
+                outputs['embeddings']['text']['negative'], 
+                dim=1
+            )
+            
+            # Pérdida para texto
+            text_loss = self.contrastive_loss(text_sim_pos, text_sim_neg)
+            
+            # Similitudes cruzadas (imagen-texto)
+            cross_sim_pos = F.cosine_similarity(
+                outputs['embeddings']['original'], 
+                outputs['embeddings']['text']['generated'], 
+                dim=1
+            )
+            cross_sim_neg = F.cosine_similarity(
+                outputs['embeddings']['original'], 
+                outputs['embeddings']['text']['negative'], 
+                dim=1
+            )
+            
+            # Pérdida cruzada
+            cross_loss = self.contrastive_loss(cross_sim_pos, cross_sim_neg)
+            
+            # Accuracy de triplete para texto y cruzada
+            text_acc = (text_sim_pos > text_sim_neg).float().mean()
+            cross_acc = (cross_sim_pos > cross_sim_neg).float().mean()
+            
+            # Pérdida total con componentes adicionales
+            total_loss = main_loss + self.alpha * (text_loss + cross_loss)
+            
+            result.update({
+                'total_loss': total_loss,
+                'image_loss': main_loss,
+                'text_loss': text_loss,
+                'cross_loss': cross_loss,
+                'text_accuracy': text_acc,
+                'cross_accuracy': cross_acc
+            })
+        
+        return result

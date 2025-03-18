@@ -4,20 +4,19 @@ import pandas as pd
 import os
 from PIL import Image
 import numpy as np
-from transformers import CLIPFeatureExtractor
+from transformers import CLIPProcessor
 from config import Config
 
 class ArtworkSimilarityDataset(Dataset):
-    def __init__(self, csv_file, transform=None, mode='train'):
+    def __init__(self, csv_file, mode='train'):
         """
         Args:
             csv_file (string): Ruta al archivo CSV con los datos.
-            transform: Transformaciones a aplicar a las imágenes.
             mode (string): 'train' o 'val' para dividir los datos.
         """
         self.data = pd.read_csv(csv_file)
-        self.transform = transform
-        self.feature_extractor = CLIPFeatureExtractor.from_pretrained(Config.CLIP_MODEL_NAME)
+        # Usamos CLIPProcessor que maneja tanto imágenes como texto
+        self.processor = CLIPProcessor.from_pretrained(Config.CLIP_MODEL_NAME)
         
         # Dividir en train/val si es necesario
         if mode == 'train':
@@ -37,41 +36,75 @@ class ArtworkSimilarityDataset(Dataset):
         generated_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['generated_image'])
         negative_img_path = os.path.join(Config.DATA_ROOT, self.data.iloc[idx]['negative_image'])
         
-        # Cargar imágenes
-        original_image = Image.open(original_img_path).convert('RGB')
-        generated_image = Image.open(generated_img_path).convert('RGB')
-        negative_image = Image.open(negative_img_path).convert('RGB')
+        # Manejo de errores para imágenes
+        try:
+            original_image = Image.open(original_img_path).convert('RGB')
+            generated_image = Image.open(generated_img_path).convert('RGB')
+            negative_image = Image.open(negative_img_path).convert('RGB')
+        except Exception as e:
+            print(f"Error loading image at index {idx}: {e}")
+            # Usar índice aleatorio diferente como fallback
+            return self.__getitem__(np.random.randint(0, len(self.data)))
         
-        # Procesar imágenes con CLIP
-        original_inputs = self.feature_extractor(images=original_image, return_tensors="pt")
-        generated_inputs = self.feature_extractor(images=generated_image, return_tensors="pt")
-        negative_inputs = self.feature_extractor(images=negative_image, return_tensors="pt")
+        # Obtener descripciones
+        sample = {}
         
-        # Extraer y eliminar la dimensión extra del batch
-        original_pixel_values = original_inputs['pixel_values'].squeeze(0)
-        generated_pixel_values = generated_inputs['pixel_values'].squeeze(0)
-        negative_pixel_values = negative_inputs['pixel_values'].squeeze(0)
-        
-        # Cargar descripciones si están habilitadas
         if Config.USE_TEXT_EMBEDDINGS:
-            original_desc = self.data.iloc[idx]['description_original_paint']
-            generated_desc = self.data.iloc[idx]['description_generated_image']
-            negative_desc = self.data.iloc[idx]['description_negative_image']
+            original_desc = self.data.iloc[idx].get('description_original_paint', '')
+            generated_desc = self.data.iloc[idx].get('description_generated_image', '')
+            negative_desc = self.data.iloc[idx].get('description_negative_image', '')
             
-            return {
-                'original_image': original_pixel_values,
-                'generated_image': generated_pixel_values,
-                'negative_image': negative_pixel_values,
-                'original_desc': original_desc,
-                'generated_desc': generated_desc,
-                'negative_desc': negative_desc,
-            }
+            # Evitar descripciones vacías
+            original_desc = original_desc if pd.notna(original_desc) else "A piece of artwork"
+            generated_desc = generated_desc if pd.notna(generated_desc) else "A piece of artwork"
+            negative_desc = negative_desc if pd.notna(negative_desc) else "A piece of artwork"
+            
+            # Procesar imagen+texto para CLIP
+            original_inputs = self.processor(
+                text=original_desc,
+                images=original_image, 
+                return_tensors="pt", 
+                padding=True, 
+                truncation=True
+            )
+            generated_inputs = self.processor(
+                text=generated_desc,
+                images=generated_image, 
+                return_tensors="pt", 
+                padding=True, 
+                truncation=True
+            )
+            negative_inputs = self.processor(
+                text=negative_desc,
+                images=negative_image, 
+                return_tensors="pt", 
+                padding=True, 
+                truncation=True
+            )
+            
+            # Extraer valores
+            sample['original_pixel_values'] = original_inputs['pixel_values'].squeeze(0)
+            sample['generated_pixel_values'] = generated_inputs['pixel_values'].squeeze(0)
+            sample['negative_pixel_values'] = negative_inputs['pixel_values'].squeeze(0)
+            
+            sample['original_input_ids'] = original_inputs['input_ids'].squeeze(0)
+            sample['generated_input_ids'] = generated_inputs['input_ids'].squeeze(0)
+            sample['negative_input_ids'] = negative_inputs['input_ids'].squeeze(0)
+            
+            sample['original_attention_mask'] = original_inputs.get('attention_mask', torch.ones_like(original_inputs['input_ids'])).squeeze(0)
+            sample['generated_attention_mask'] = generated_inputs.get('attention_mask', torch.ones_like(generated_inputs['input_ids'])).squeeze(0)
+            sample['negative_attention_mask'] = negative_inputs.get('attention_mask', torch.ones_like(negative_inputs['input_ids'])).squeeze(0)
         else:
-            return {
-                'original_image': original_pixel_values,
-                'generated_image': generated_pixel_values,
-                'negative_image': negative_pixel_values
-            }
+            # Solo procesar imágenes
+            original_inputs = self.processor(images=original_image, return_tensors="pt")
+            generated_inputs = self.processor(images=generated_image, return_tensors="pt")
+            negative_inputs = self.processor(images=negative_image, return_tensors="pt")
+            
+            sample['original_pixel_values'] = original_inputs['pixel_values'].squeeze(0)
+            sample['generated_pixel_values'] = generated_inputs['pixel_values'].squeeze(0)
+            sample['negative_pixel_values'] = negative_inputs['pixel_values'].squeeze(0)
+        
+        return sample
 
 def get_dataloaders(config):
     """
@@ -100,7 +133,8 @@ def get_dataloaders(config):
         batch_size=config.BATCH_SIZE,
         shuffle=True,
         num_workers=config.NUM_WORKERS,
-        pin_memory=True
+        pin_memory=True,
+        drop_last=True  # Evita problemas con batches incompletos
     )
     
     val_loader = DataLoader(

@@ -106,64 +106,76 @@ class SiameseCLIPModel(nn.Module):
         
         return refined_features
     
-    def encode_text(self, text):
+    def encode_text(self, input_ids, attention_mask=None):
         """
-        Codifica texto usando CLIP.
+        Codifica texto usando CLIP con input_ids ya procesados.
         
         Args:
-            text: Lista de strings con descripciones
+            input_ids: Tokens de entrada [batch_size, seq_len]
+            attention_mask: Máscara de atención [batch_size, seq_len]
             
         Returns:
-            Embedding de texto [batch_size, embed_dim]
+            Embedding de texto refinado [batch_size, embed_dim]
         """
-        inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
-        inputs = {k: v.to(next(self.parameters()).device) for k, v in inputs.items()}
-        
         with torch.no_grad():
-            text_features = self.clip.get_text_features(**inputs)
+            text_features = self.clip.get_text_features(
+                input_ids=input_ids,
+                attention_mask=attention_mask if attention_mask is not None else None
+            )
             
         # Refinar con transformer
         refined_features = self.transformer_projection(text_features)
         
         return refined_features
     
-    def forward(self, original_image, generated_image, negative_image, 
-                original_text=None, generated_text=None, negative_text=None):
+    def forward(self, batch):
         """
         Forward pass del modelo siamés.
         
         Args:
-            original_image: Imagen original [batch_size, 3, H, W]
-            generated_image: Imagen generada [batch_size, 3, H, W]
-            negative_image: Imagen negativa [batch_size, 3, H, W]
-            original_text: (Opcional) Descripción de la imagen original
-            generated_text: (Opcional) Descripción de la imagen generada
-            negative_text: (Opcional) Descripción de la imagen negativa
-            
+            batch: Diccionario con las claves:
+                - original_pixel_values, generated_pixel_values, negative_pixel_values
+                - original_input_ids, generated_input_ids, negative_input_ids (opcionales)
+                - original_attention_mask, generated_attention_mask, negative_attention_mask (opcionales)
+                
         Returns:
             Embeddings refinados y similitudes
         """
         # Codificar imágenes
-        original_embedding = self.encode_image(original_image)
-        generated_embedding = self.encode_image(generated_image)
-        negative_embedding = self.encode_image(negative_image)
-        
-        # Calcular similitudes del coseno
-        sim_pos = F.cosine_similarity(original_embedding, generated_embedding, dim=1)
-        sim_neg = F.cosine_similarity(original_embedding, negative_embedding, dim=1)
+        original_embedding = self.encode_image(batch['original_pixel_values'])
+        generated_embedding = self.encode_image(batch['generated_pixel_values'])
+        negative_embedding = self.encode_image(batch['negative_pixel_values'])
         
         # Si se proporcionan textos, también los codificamos
         text_embeddings = None
-        if original_text is not None and Config.USE_TEXT_EMBEDDINGS:
-            original_text_embedding = self.encode_text(original_text)
-            generated_text_embedding = self.encode_text(generated_text)
-            negative_text_embedding = self.encode_text(negative_text)
+        if 'original_input_ids' in batch and Config.USE_TEXT_EMBEDDINGS:
+            original_text_embedding = self.encode_text(
+                batch['original_input_ids'], 
+                batch.get('original_attention_mask')
+            )
+            generated_text_embedding = self.encode_text(
+                batch['generated_input_ids'], 
+                batch.get('generated_attention_mask')
+            )
+            negative_text_embedding = self.encode_text(
+                batch['negative_input_ids'], 
+                batch.get('negative_attention_mask')
+            )
+            
+            # Combinar embeddings de imagen y texto (promedio simple)
+            original_embedding = (original_embedding + original_text_embedding) / 2
+            generated_embedding = (generated_embedding + generated_text_embedding) / 2
+            negative_embedding = (negative_embedding + negative_text_embedding) / 2
             
             text_embeddings = {
                 'original': original_text_embedding,
                 'generated': generated_text_embedding,
                 'negative': negative_text_embedding
             }
+        
+        # Calcular similitudes del coseno
+        sim_pos = F.cosine_similarity(original_embedding, generated_embedding, dim=1)
+        sim_neg = F.cosine_similarity(original_embedding, negative_embedding, dim=1)
         
         return {
             'embeddings': {
