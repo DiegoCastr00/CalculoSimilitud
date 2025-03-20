@@ -48,7 +48,7 @@ def verify_data_structure():
         # Verificar que el CSV tiene las columnas necesarias
         required_columns = ['original_image', 'generated_image', 'negative_image']
         if Config.USE_TEXT_EMBEDDINGS:
-            required_columns.extend(['description_original_paint', 'description_generated_image', 'description_negative_image'])
+            required_columns.extend(['description_original_image', 'description_generated_image', 'description_negative_image'])
         
         missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:

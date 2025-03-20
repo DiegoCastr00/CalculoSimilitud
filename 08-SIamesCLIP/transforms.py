@@ -66,7 +66,7 @@ class ArtworkSimilarityDataset(Dataset):
         
         # Obtener descripciones
         if Config.USE_TEXT_EMBEDDINGS:
-            original_desc = self.data.iloc[idx].get('description_original_paint', '')
+            original_desc = self.data.iloc[idx].get('description_original_image', '')
             generated_desc = self.data.iloc[idx].get('description_generated_image', '')
             negative_desc = self.data.iloc[idx].get('description_negative_image', '')
             
