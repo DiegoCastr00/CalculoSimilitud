@@ -200,7 +200,12 @@ class SiameseCLIPModel(nn.Module):
         sim_pos = F.cosine_similarity(original_embedding, generated_embedding, dim=1)
         sim_neg = F.cosine_similarity(original_embedding, negative_embedding, dim=1)
         
+        # Asegurar que la temperatura sea un tensor de forma adecuada para DataParallel
         temperature = torch.max(self.temperature, self.min_temperature)
+        if temperature.numel() > 1:
+            temperature = temperature.mean()
+        # Convertir a tensor de dimensión [1] para evitar advertencia de DataParallel
+        temperature = temperature.view(1)
 
         
         return {

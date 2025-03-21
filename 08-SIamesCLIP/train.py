@@ -2,7 +2,8 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler
+from torch.amp.autocast_mode import autocast
 import numpy as np
 import time
 import os
@@ -60,7 +61,7 @@ class Trainer:
         self.train_loader, self.val_loader = get_dataloaders(config)
         
         # Inicializar grad scaler para mixed precision
-        self.scaler = GradScaler()
+        self.scaler = GradScaler('cuda')
         
         # Inicializar métricas
         self.best_val_loss = float('inf')
@@ -91,7 +92,7 @@ class Trainer:
             # Forward pass con mixed precision
             self.optimizer.zero_grad()
             
-            with autocast():
+            with autocast(device_type='cuda'):
                 # Pasar el batch completo al modelo en lugar de desempaquetar los inputs
                 outputs = self.model(batch)
                 loss_dict = self.criterion(outputs)

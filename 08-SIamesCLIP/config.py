@@ -5,7 +5,7 @@ from datetime import datetime
 
 class Config:
     # Rutas
-    DATA_ROOT = Path("./")  # Directorio raíz del proyecto
+    DATA_ROOT = Path("/home/jesusgr/SimilitudImagenes/08-SiamesCLIP")  # Directorio raíz del proyecto
     IMAGES_DIR = DATA_ROOT / "imagenes"  # Carpeta de imágenes
     
     # Timestamp para identificar la ejecución actual
@@ -49,7 +49,7 @@ class Config:
     SAVE_EVERY = 5
     
     # Parámetros de validación
-    VAL_SPLIT = 0.2  # 20% para validación
+    VAL_SPLIT = 0.6  # 50% para validación
     
     # Parámetros de Early Stopping
     EARLY_STOPPING = True  # Activar/desactivar early stopping

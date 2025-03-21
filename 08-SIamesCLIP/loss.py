@@ -26,6 +26,13 @@ class ContrastiveLoss(nn.Module):
         # Usar temperatura proporcionada o la predeterminada
         temp = temperature if temperature is not None else self.temperature
         
+        # Asegurar que la temperatura sea un tensor de forma adecuada para DataParallel
+        if isinstance(temp, torch.Tensor):
+            if temp.numel() > 1:
+                temp = temp.mean()  # Convertir a escalar tomando la media
+            # Asegurar que sea un escalar para cálculos
+            temp = temp.item() if temp.numel() == 1 else temp
+        
         # Aplicar margen opcional
         sim_neg = sim_neg - self.margin
         
@@ -70,6 +77,13 @@ class MultimodalContrastiveLoss(nn.Module):
             
         # Extraer temperatura dinámica si está disponible en el modelo
         temperature = outputs.get('temperature', self.temperature)
+        
+        # Asegurar que la temperatura sea un tensor de forma adecuada para DataParallel
+        if isinstance(temperature, torch.Tensor):
+            if temperature.numel() > 1:
+                temperature = temperature.mean()  # Convertir a escalar tomando la media
+            # Asegurar que sea un escalar para cálculos
+            temperature = temperature.item() if temperature.numel() == 1 else temperature
         
         # Pérdida principal (ya combina imagen y texto si están disponibles)
         main_loss = self.contrastive_loss(
