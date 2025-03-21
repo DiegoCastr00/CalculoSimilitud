@@ -1,255 +1,251 @@
 import torch
 import torch.nn.functional as F
-import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
-import argparse
 import os
+import argparse
 from pathlib import Path
-from transformers import CLIPFeatureExtractor
+import matplotlib.pyplot as plt
+import numpy as np
+from transformers import CLIPProcessor
 
-from config import Config
 from model import SiameseCLIPModel
+from config import Config
 
-class ArtSimilarityInference:
-    def __init__(self, checkpoint_path, config):
-        self.config = config
-        self.device = torch.device(f"cuda:{config.GPU_IDS[0]}" if torch.cuda.is_available() else "cpu")
+class SimilarityInference:
+    def __init__(self, checkpoint_path, device=None):
+        """
+        Inicializa el modelo para inferencia.
         
-        # Cargar checkpoint
-        self.checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        Args:
+            checkpoint_path: Ruta al checkpoint del modelo entrenado
+            device: Dispositivo para inferencia (cuda o cpu)
+        """
+        # Configurar dispositivo
+        if device is None:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        else:
+            self.device = torch.device(device)
+            
+        print(f"Utilizando dispositivo: {self.device}")
+        
+        # Cargar configuración
+        self.config = Config
         
         # Inicializar modelo
-        self.model = SiameseCLIPModel(config)
+        self.model = SiameseCLIPModel(self.config)
         
-        # Cargar pesos del modelo
-        self.model.load_state_dict(self.checkpoint['model_state_dict'])
+        # Cargar checkpoint
+        self._load_checkpoint(checkpoint_path)
+        
+        # Mover modelo al dispositivo
         self.model.to(self.device)
         self.model.eval()
         
-        # Inicializar extractor de características
-        self.feature_extractor = CLIPFeatureExtractor.from_pretrained(config.CLIP_MODEL_NAME)
+        # Inicializar procesador de CLIP
+        self.processor = CLIPProcessor.from_pretrained(self.config.CLIP_MODEL_NAME)
         
-        # Crear directorio para resultados
-        self.results_dir = Path("inference_results")
-        os.makedirs(self.results_dir, exist_ok=True)
+    def _load_checkpoint(self, checkpoint_path):
+        """
+        Carga los pesos del modelo desde un checkpoint.
+        
+        Args:
+            checkpoint_path: Ruta al checkpoint
+        """
+        if not os.path.exists(checkpoint_path):
+            raise FileNotFoundError(f"No se encontró el checkpoint en {checkpoint_path}")
+        
+        # Cargar checkpoint
+        checkpoint = torch.load(checkpoint_path, map_location=self.device)
+        
+        # Cargar estado del modelo
+        if 'model_state_dict' in checkpoint:
+            self.model.load_state_dict(checkpoint['model_state_dict'])
+            print(f"Modelo cargado desde {checkpoint_path}")
+            print(f"Época: {checkpoint.get('epoch', 'N/A')}")
+            print(f"Mejor pérdida de validación: {checkpoint.get('best_val_loss', 'N/A')}")
+        else:
+            # Si el checkpoint solo contiene los pesos del modelo
+            self.model.load_state_dict(checkpoint)
+            print(f"Modelo cargado desde {checkpoint_path} (formato simple)")
     
     def preprocess_image(self, image_path):
         """
-        Preprocesa una imagen para el modelo.
+        Preprocesa una imagen para inferencia.
         
         Args:
             image_path: Ruta a la imagen
             
         Returns:
-            Tensor de imagen procesado
+            Tensor de la imagen procesada
         """
+        if not os.path.exists(image_path):
+            raise FileNotFoundError(f"No se encontró la imagen en {image_path}")
+        
+        # Cargar imagen
         image = Image.open(image_path).convert('RGB')
-        inputs = self.feature_extractor(images=image, return_tensors="pt")
-        pixel_values = inputs['pixel_values'].to(self.device)
         
-        return pixel_values
+        # Procesar imagen con el procesador de CLIP
+        inputs = self.processor(images=image, return_tensors="pt")
+        
+        return inputs.pixel_values.to(self.device)
     
-    def extract_embedding(self, image_path):
+    def preprocess_text(self, text):
         """
-        Extrae el embedding de una imagen.
+        Preprocesa un texto para inferencia.
         
         Args:
-            image_path: Ruta a la imagen
+            text: Texto a procesar
             
         Returns:
-            Embedding normalizado
+            Tensores de input_ids y attention_mask
         """
-        pixel_values = self.preprocess_image(image_path)
+        # Procesar texto con el procesador de CLIP
+        inputs = self.processor(text=text, return_tensors="pt", padding=True, truncation=True)
         
+        return {
+            'input_ids': inputs.input_ids.to(self.device),
+            'attention_mask': inputs.attention_mask.to(self.device)
+        }
+    
+    def calculate_similarity(self, image1_path, image2_path, text1=None, text2=None):
+        """
+        Calcula la similitud entre dos imágenes (y opcionalmente sus textos).
+        
+        Args:
+            image1_path: Ruta a la primera imagen
+            image2_path: Ruta a la segunda imagen
+            text1: Descripción de la primera imagen (opcional)
+            text2: Descripción de la segunda imagen (opcional)
+            
+        Returns:
+            Similitud del coseno entre los embeddings [-1, 1]
+        """
+        # Preprocesar imágenes
+        image1 = self.preprocess_image(image1_path)
+        image2 = self.preprocess_image(image2_path)
+        
+        # Preprocesar textos si se proporcionan
+        text1_inputs = None
+        text2_inputs = None
+        
+        if text1 is not None and text2 is not None and self.config.USE_TEXT_EMBEDDINGS:
+            text1_inputs = self.preprocess_text(text1)
+            text2_inputs = self.preprocess_text(text2)
+        
+        # Calcular similitud
         with torch.no_grad():
-            embedding = self.model.encode_image(pixel_values)
+            if text1_inputs is not None and text2_inputs is not None:
+                similarity = self.model.calculate_similarity(
+                    image1_pixel_values=image1,
+                    image2_pixel_values=image2,
+                    text1_input_ids=text1_inputs['input_ids'],
+                    text2_input_ids=text2_inputs['input_ids'],
+                    text1_attention_mask=text1_inputs['attention_mask'],
+                    text2_attention_mask=text2_inputs['attention_mask']
+                )
+            else:
+                similarity = self.model.calculate_similarity(
+                    image1_pixel_values=image1,
+                    image2_pixel_values=image2
+                )
         
-        return embedding
+        return similarity.item()
     
-    def compute_similarity(self, img1_path, img2_path, visualize=False):
+    def calculate_batch_similarities(self, reference_image, comparison_images, reference_text=None, comparison_texts=None):
         """
-        Calcula la similitud entre dos imágenes.
+        Calcula similitudes entre una imagen de referencia y múltiples imágenes de comparación.
         
         Args:
-            img1_path: Ruta a la primera imagen
-            img2_path: Ruta a la segunda imagen
-            visualize: Si se debe visualizar la comparación
+            reference_image: Ruta a la imagen de referencia
+            comparison_images: Lista de rutas a imágenes para comparar
+            reference_text: Descripción de la imagen de referencia (opcional)
+            comparison_texts: Lista de descripciones para las imágenes de comparación (opcional)
             
         Returns:
-            Valor de similitud entre 0 y 1
+            Lista de similitudes ordenadas de mayor a menor
         """
-        # Extraer embeddings
-        embedding1 = self.extract_embedding(img1_path)
-        embedding2 = self.extract_embedding(img2_path)
+        # Preprocesar imagen de referencia
+        ref_image = self.preprocess_image(reference_image)
         
-        # Calcular similitud del coseno
-        similarity = F.cosine_similarity(embedding1, embedding2).item()
-        
-        # Normalizar a rango [0, 1]
-        similarity = (similarity + 1) / 2
-        
-        if visualize:
-            self.visualize_comparison(img1_path, img2_path, similarity)
-        
-        return similarity
-    
-    def visualize_comparison(self, img1_path, img2_path, similarity):
-        """
-        Visualiza la comparación entre dos imágenes.
-        
-        Args:
-            img1_path: Ruta a la primera imagen
-            img2_path: Ruta a la segunda imagen
-            similarity: Valor de similitud calculado
-        """
-        # Cargar imágenes
-        img1 = Image.open(img1_path).convert('RGB')
-        img2 = Image.open(img2_path).convert('RGB')
-        
-        # Crear figura
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-        
-        # Mostrar imágenes
-        ax1.imshow(img1)
-        ax1.set_title("Imagen 1")
-        ax1.axis('off')
-        
-        ax2.imshow(img2)
-        ax2.set_title("Imagen 2")
-        ax2.axis('off')
-        
-        # Añadir similitud como título global
-        fig.suptitle(f"Similitud: {similarity:.4f}", fontsize=16)
-        
-        # Ajustar espaciado
-        plt.tight_layout()
-        
-        # Guardar figura
-        output_path = self.results_dir / f"comparison_{os.path.basename(img1_path).split('.')[0]}_{os.path.basename(img2_path).split('.')[0]}.png"
-        plt.savefig(output_path, dpi=300)
-        plt.close()
-        
-        print(f"Comparación guardada en: {output_path}")
-    
-    def process_folder(self, reference_path, comparison_folder):
-        """
-        Compara una imagen de referencia con todas las imágenes en una carpeta.
-        
-        Args:
-            reference_path: Ruta a la imagen de referencia
-            comparison_folder: Ruta a la carpeta con imágenes para comparar
-            
-        Returns:
-            Lista de tuplas (ruta_imagen, similitud) ordenada por similitud
-        """
-        # Extraer embedding de referencia
-        reference_embedding = self.extract_embedding(reference_path)
+        # Preprocesar texto de referencia si se proporciona
+        ref_text_inputs = None
+        if reference_text is not None and self.config.USE_TEXT_EMBEDDINGS:
+            ref_text_inputs = self.preprocess_text(reference_text)
         
         results = []
         
-        # Obtener archivos de imagen en la carpeta
-        image_extensions = ['.jpg', '.jpeg', '.png']
-        comparison_paths = [
-            os.path.join(comparison_folder, f) 
-            for f in os.listdir(comparison_folder) 
-            if os.path.splitext(f)[1].lower() in image_extensions
-        ]
-        
-        # Calcular similitudes
-        for img_path in comparison_paths:
+        # Calcular similitud para cada imagen de comparación
+        for i, comp_image_path in enumerate(comparison_images):
             try:
-                img_embedding = self.extract_embedding(img_path)
-                similarity = F.cosine_similarity(reference_embedding, img_embedding).item()
-                similarity = (similarity + 1) / 2  # Normalizar a [0, 1]
-                results.append((img_path, similarity))
+                # Preprocesar imagen de comparación
+                comp_image = self.preprocess_image(comp_image_path)
+                
+                # Preprocesar texto de comparación si se proporciona
+                comp_text_inputs = None
+                if comparison_texts is not None and i < len(comparison_texts) and self.config.USE_TEXT_EMBEDDINGS:
+                    comp_text_inputs = self.preprocess_text(comparison_texts[i])
+                
+                # Calcular similitud
+                with torch.no_grad():
+                    if ref_text_inputs is not None and comp_text_inputs is not None:
+                        similarity = self.model.calculate_similarity(
+                            image1_pixel_values=ref_image,
+                            image2_pixel_values=comp_image,
+                            text1_input_ids=ref_text_inputs['input_ids'],
+                            text2_input_ids=comp_text_inputs['input_ids'],
+                            text1_attention_mask=ref_text_inputs['attention_mask'],
+                            text2_attention_mask=comp_text_inputs['attention_mask']
+                        )
+                    else:
+                        similarity = self.model.calculate_similarity(
+                            image1_pixel_values=ref_image,
+                            image2_pixel_values=comp_image
+                        )
+                
+                results.append({
+                    'image_path': comp_image_path,
+                    'similarity': similarity.item()
+                })
             except Exception as e:
-                print(f"Error al procesar {img_path}: {e}")
+                print(f"Error al procesar {comp_image_path}: {e}")
         
-        # Ordenar por similitud descendente
-        results.sort(key=lambda x: x[1], reverse=True)
+        # Ordenar resultados por similitud (de mayor a menor)
+        results.sort(key=lambda x: x['similarity'], reverse=True)
         
         return results
     
-    def visualize_similar_images(self, reference_path, results, top_n=5):
+    def visualize_similarities(self, reference_image, comparison_results, num_images=5, figsize=(15, 10)):
         """
-        Visualiza las imágenes más similares a una referencia.
+        Visualiza las similitudes entre una imagen de referencia y las imágenes más similares.
         
         Args:
-            reference_path: Ruta a la imagen de referencia
-            results: Lista de tuplas (ruta_imagen, similitud)
-            top_n: Número de imágenes similares a mostrar
+            reference_image: Ruta a la imagen de referencia
+            comparison_results: Resultados de calculate_batch_similarities
+            num_images: Número de imágenes similares a mostrar
+            figsize: Tamaño de la figura
         """
-        # Cargar imagen de referencia
-        ref_img = Image.open(reference_path).convert('RGB')
-        
-        # Limitar al top_n
-        results = results[:top_n]
+        # Limitar el número de imágenes a mostrar
+        num_images = min(num_images, len(comparison_results))
         
         # Crear figura
-        fig, axes = plt.subplots(1, top_n + 1, figsize=(15, 5))
+        fig, axes = plt.subplots(1, num_images + 1, figsize=figsize)
         
         # Mostrar imagen de referencia
+        ref_img = Image.open(reference_image).convert('RGB')
         axes[0].imshow(ref_img)
-        axes[0].set_title("Referencia")
+        axes[0].set_title("Imagen de referencia")
         axes[0].axis('off')
         
         # Mostrar imágenes similares
-        for i, (img_path, similarity) in enumerate(results):
+        for i in range(num_images):
+            img_path = comparison_results[i]['image_path']
+            similarity = comparison_results[i]['similarity']
+            
             img = Image.open(img_path).convert('RGB')
-            axes[i + 1].imshow(img)
-            axes[i + 1].set_title(f"Sim: {similarity:.4f}")
-            axes[i + 1].axis('off')
+            axes[i+1].imshow(img)
+            axes[i+1].set_title(f"Sim: {similarity:.4f}")
+            axes[i+1].axis('off')
         
-        # Ajustar espaciado
         plt.tight_layout()
-        
-        # Guardar figura
-        output_path = self.results_dir / f"similar_to_{os.path.basename(reference_path).split('.')[0]}.png"
-        plt.savefig(output_path, dpi=300)
-        plt.close()
-        
-        print(f"Visualización guardada en: {output_path}")
+        plt.show()
 
-def main():
-    parser = argparse.ArgumentParser(description="Inferencia con modelo de similitud artística")
-    parser.add_argument("--checkpoint", type=str, required=True, help="Ruta al checkpoint del modelo")
-    parser.add_argument("--mode", type=str, choices=['compare', 'search'], required=True, help="Modo de inferencia")
-    parser.add_argument("--reference", type=str, required=True, help="Ruta a la imagen de referencia")
-    parser.add_argument("--comparison", type=str, help="Ruta a la segunda imagen o carpeta para comparar")
-    parser.add_argument("--top_n", type=int, default=5, help="Número de imágenes similares a mostrar")
-    
-    args = parser.parse_args()
-    
-    # Inicializar inferencia
-    inference = ArtSimilarityInference(args.checkpoint, Config)
-    
-    if args.mode == 'compare':
-        # Modo de comparación entre dos imágenes
-        if not args.comparison:
-            raise ValueError("El modo 'compare' requiere el argumento --comparison")
-        
-        print(f"Comparando {args.reference} con {args.comparison}...")
-        similarity = inference.compute_similarity(args.reference, args.comparison, visualize=True)
-        print(f"Similitud: {similarity:.4f}")
-    
-    elif args.mode == 'search':
-        # Modo de búsqueda en carpeta
-        if not args.comparison:
-            raise ValueError("El modo 'search' requiere el argumento --comparison")
-        if not os.path.isdir(args.comparison):
-            raise ValueError(f"El directorio {args.comparison} no existe")
-        
-        print(f"Buscando imágenes similares a {args.reference} en {args.comparison}...")
-        results = inference.process_folder(args.reference, args.comparison)
-        
-        # Imprimir resultados
-        print(f"Top {min(args.top_n, len(results))} imágenes más similares:")
-        for i, (img_path, similarity) in enumerate(results[:args.top_n]):
-            print(f"{i+1}. {os.path.basename(img_path)}: {similarity:.4f}")
-        
-        # Visualizar resultados
-        inference.visualize_similar_images(args.reference, results, top_n=args.top_n)
-
-if __name__ == "__main__":
-    main()
