@@ -1,0 +1,101 @@
+2025-03-20 01:09:45,735 - INFO - Iniciando entrenamiento con timestamp: 20250320-010944
+2025-03-20 01:09:45,735 - INFO - Logs guardados en: logs_20250320-010944/training_20250320-010944.log
+2025-03-20 01:09:45,735 - INFO - Checkpoints guardados en: checkpoints_20250320-010944
+2025-03-20 01:09:45,735 - INFO - Verificando estructura de datos...
+2025-03-20 01:09:46,007 - INFO - CSV cargado correctamente con 81444 filas.
+2025-03-20 01:09:46,007 - INFO - Todas las columnas requeridas están presentes en el CSV.
+2025-03-20 01:09:46,008 - INFO - Se ha verificado el acceso a las primeras imágenes correctamente.
+2025-03-20 01:09:46,016 - INFO - Verificación de datos completada con éxito. Iniciando entrenamiento...
+2025-03-20 01:09:46,017 - INFO - Iniciando W&B run: artsiamese-20250320-010944
+2025-03-20 01:09:46,804 - INFO - Creando entrenador...
+2025-03-20 01:09:49,879 - INFO - Iniciando entrenamiento...
+2025-03-20 01:09:49,879 - INFO - Training on cuda:0
+2025-03-20 01:09:49,880 - INFO - Total parameters: 156796674
+2025-03-20 01:09:49,881 - INFO - Trainable parameters: 5519361
+2025-03-20 01:09:49,881 - INFO - Usando 2 GPUs: [0, 1]
+2025-03-20 01:21:15,135 - INFO - Nueva mejor pérdida de validación: 0.1883. Guardando mejor modelo.
+2025-03-20 01:21:15,135 - INFO - Epoch 1/20 | Train Loss: 0.2017 | Train Triplet Acc: 0.9701 | Val Loss: 0.1883 | Val Triplet Acc: 0.9752 | Time: 685.25s
+2025-03-20 01:33:04,870 - INFO - Nueva mejor pérdida de validación: 0.1467. Guardando mejor modelo.
+2025-03-20 01:33:04,871 - INFO - Epoch 2/20 | Train Loss: 0.1189 | Train Triplet Acc: 0.9874 | Val Loss: 0.1467 | Val Triplet Acc: 0.9834 | Time: 709.74s
+2025-03-20 01:45:22,871 - INFO - Nueva mejor pérdida de validación: 0.1328. Guardando mejor modelo.
+2025-03-20 01:45:22,871 - INFO - Epoch 3/20 | Train Loss: 0.0990 | Train Triplet Acc: 0.9911 | Val Loss: 0.1328 | Val Triplet Acc: 0.9874 | Time: 738.00s
+2025-03-20 01:57:46,005 - INFO - Nueva mejor pérdida de validación: 0.1139. Guardando mejor modelo.
+2025-03-20 01:57:46,005 - INFO - Epoch 4/20 | Train Loss: 0.0857 | Train Triplet Acc: 0.9931 | Val Loss: 0.1139 | Val Triplet Acc: 0.9902 | Time: 743.13s
+2025-03-20 02:12:02,621 - INFO - Nueva mejor pérdida de validación: 0.1102. Guardando mejor modelo.
+2025-03-20 02:12:02,637 - INFO - Epoch 5/20 | Train Loss: 0.0743 | Train Triplet Acc: 0.9955 | Val Loss: 0.1102 | Val Triplet Acc: 0.9896 | Time: 856.62s
+2025-03-20 02:13:47,928 - INFO - Guardado checkpoint de la época 5
+2025-03-20 02:25:50,970 - INFO - Early stopping counter: 1/5
+2025-03-20 02:25:50,970 - INFO - Epoch 6/20 | Train Loss: 0.0738 | Train Triplet Acc: 0.9945 | Val Loss: 0.1232 | Val Triplet Acc: 0.9866 | Time: 723.04s
+2025-03-20 02:38:17,765 - INFO - Early stopping counter: 2/5
+2025-03-20 02:38:17,766 - INFO - Epoch 7/20 | Train Loss: 0.0665 | Train Triplet Acc: 0.9966 | Val Loss: 0.1263 | Val Triplet Acc: 0.9882 | Time: 746.80s
+2025-03-20 02:52:23,291 - INFO - Nueva mejor pérdida de validación: 0.1071. Guardando mejor modelo.
+2025-03-20 02:52:23,307 - INFO - Epoch 8/20 | Train Loss: 0.0606 | Train Triplet Acc: 0.9971 | Val Loss: 0.1071 | Val Triplet Acc: 0.9898 | Time: 845.53s
+2025-03-20 03:04:46,910 - INFO - Early stopping counter: 1/5
+2025-03-20 03:04:46,911 - INFO - Epoch 9/20 | Train Loss: 0.0548 | Train Triplet Acc: 0.9975 | Val Loss: 0.1197 | Val Triplet Acc: 0.9880 | Time: 743.60s
+2025-03-20 03:17:31,942 - INFO - Early stopping counter: 2/5
+2025-03-20 03:17:31,943 - INFO - Epoch 10/20 | Train Loss: 0.0541 | Train Triplet Acc: 0.9974 | Val Loss: 0.1165 | Val Triplet Acc: 0.9883 | Time: 765.03s
+2025-03-20 03:17:32,485 - INFO - Guardado checkpoint de la época 10
+2025-03-20 03:30:43,450 - INFO - Early stopping counter: 3/5
+2025-03-20 03:30:43,450 - INFO - Epoch 11/20 | Train Loss: 0.0484 | Train Triplet Acc: 0.9983 | Val Loss: 0.1166 | Val Triplet Acc: 0.9886 | Time: 790.97s
+2025-03-20 03:43:26,746 - INFO - Early stopping counter: 4/5
+2025-03-20 03:43:26,746 - INFO - Epoch 12/20 | Train Loss: 0.0437 | Train Triplet Acc: 0.9989 | Val Loss: 0.1137 | Val Triplet Acc: 0.9897 | Time: 763.30s
+2025-03-20 03:56:41,424 - INFO - Nueva mejor pérdida de validación: 0.0994. Guardando mejor modelo.
+2025-03-20 03:56:41,440 - INFO - Epoch 13/20 | Train Loss: 0.0257 | Train Triplet Acc: 0.9998 | Val Loss: 0.0994 | Val Triplet Acc: 0.9913 | Time: 794.68s
+2025-03-20 04:09:06,765 - INFO - Early stopping counter: 1/5
+2025-03-20 04:09:06,765 - INFO - Epoch 14/20 | Train Loss: 0.0194 | Train Triplet Acc: 0.9999 | Val Loss: 0.1012 | Val Triplet Acc: 0.9914 | Time: 745.32s
+2025-03-20 04:22:03,047 - INFO - Early stopping counter: 2/5
+2025-03-20 04:22:03,047 - INFO - Epoch 15/20 | Train Loss: 0.0181 | Train Triplet Acc: 0.9999 | Val Loss: 0.1119 | Val Triplet Acc: 0.9893 | Time: 776.28s
+2025-03-20 04:22:03,576 - INFO - Guardado checkpoint de la época 15
+2025-03-20 04:35:13,058 - INFO - Early stopping counter: 3/5
+2025-03-20 04:35:13,058 - INFO - Epoch 16/20 | Train Loss: 0.0167 | Train Triplet Acc: 1.0000 | Val Loss: 0.1173 | Val Triplet Acc: 0.9900 | Time: 789.48s
+2025-03-20 04:47:57,696 - INFO - Early stopping counter: 4/5
+2025-03-20 04:47:57,696 - INFO - Epoch 17/20 | Train Loss: 0.0162 | Train Triplet Acc: 0.9998 | Val Loss: 0.1133 | Val Triplet Acc: 0.9899 | Time: 764.64s
+2025-03-20 05:00:40,667 - INFO - Early stopping triggered after 18 épocas. No hay mejora en la pérdida de validación durante 5 épocas.
+2025-03-20 05:00:40,667 - INFO - Early stopping counter: 5/5
+2025-03-20 05:00:40,668 - INFO - Epoch 18/20 | Train Loss: 0.0100 | Train Triplet Acc: 1.0000 | Val Loss: 0.1148 | Val Triplet Acc: 0.9893 | Time: 762.97s
+2025-03-20 05:00:40,668 - INFO - Entrenamiento detenido tempranamente en la época 18
+2025-03-20 05:00:40,668 - INFO - Entrenamiento completado con éxito!
+2025-03-20 05:00:40,668 - INFO - Finalizando W&B run...
+2025-03-20 05:00:41,432 - INFO - Entrenamiento completado con éxito!
+wandb:                                                                                
+wandb: 
+wandb: Run history:
+wandb:                epoch ▁▁▁▁▂▂▂▂▃▃▃▃▃▃▄▄▄▄▅▅▅▅▆▆▆▆▆▆▇▇▇▇████
+wandb:        learning_rate ████████████▃▃▃▃▃▁
+wandb:           train_loss █▅▄▄▃▃▃▃▃▃▂▂▂▁▁▁▁▁
+wandb:    train_triplet_acc ▁▅▆▆▇▇▇▇▇▇████████
+wandb:   val_cross_accuracy ▁▅▆▇▇▆▇▇▇▆▆▆██▇▆▆▇
+wandb:       val_cross_loss █▄▄▃▂▃▃▂▂▂▃▂▁▁▂▂▂▂
+wandb:     val_i2t_accuracy ▁▄▆▆▆▆▆▆▇▆▆▇███▇▇█
+wandb:         val_i2t_loss █▄▄▃▂▃▃▃▂▃▃▂▁▁▁▂▂▂
+wandb:       val_image_loss █▅▄▂▂▃▃▂▃▂▂▂▁▁▂▂▂▂
+wandb:             val_loss █▅▄▂▂▃▃▂▃▂▂▂▁▁▂▂▂▂
+wandb:     val_t2i_accuracy ▁▅▅▇█▅▇█▇▆▆▄▇▆▅▄▄▄
+wandb:         val_t2i_loss █▄▅▂▁▃▃▁▂▂▂▃▁▂▃▄▃▃
+wandb:    val_text_accuracy ▁▄▆▇▆▆▅▇▆▅▅▅█▇▆▄▅▆
+wandb:        val_text_loss █▄▃▂▂▃▂▁▂▃▃▄▁▂▄▆▅▅
+wandb:       val_total_loss █▅▄▂▂▃▃▂▃▂▂▂▁▁▂▂▂▂
+wandb:      val_triplet_acc ▁▅▆▇▇▆▇▇▇▇▇▇██▇▇▇▇
+wandb: val_triplet_accuracy ▁▅▆▇▇▆▇▇▇▇▇▇██▇▇▇▇
+wandb: 
+wandb: Run summary:
+wandb:                epoch 17
+wandb:        learning_rate 7e-05
+wandb:           train_loss 0.01003
+wandb:    train_triplet_acc 0.99997
+wandb:   val_cross_accuracy 0.96106
+wandb:       val_cross_loss 0.10576
+wandb:     val_i2t_accuracy 0.95528
+wandb:         val_i2t_loss 0.11926
+wandb:       val_image_loss 0.02909
+wandb:             val_loss 0.1148
+wandb:     val_t2i_accuracy 0.96685
+wandb:         val_t2i_loss 0.09226
+wandb:    val_text_accuracy 0.93929
+wandb:        val_text_loss 0.17994
+wandb:       val_total_loss 0.1148
+wandb:      val_triplet_acc 0.98934
+wandb: val_triplet_accuracy 0.98934
+wandb: 
+wandb: 🚀 View run artsiamese-20250320-010944 at: https://wandb.ai/dant333/art-similarity/runs/ej1q9dqs
+wandb: ⭐️ View project at: https://wandb.ai/dant333/art-similarity
