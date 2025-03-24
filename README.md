@@ -1,121 +1,35 @@
-# Cálculo de Similitud entre Imágenes Artísticas y Generadas por Stable Diffusion utilizando Redes Convolucionales Siamesas
+# 🎨 Similitud entre Imágenes Artísticas y Generadas por Stable Diffusion
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Este repositorio contiene el código y los datos utilizados en el proyecto de investigación sobre la similitud entre imágenes artísticas y generadas mediante Stable Diffusion XL Refiner 1.0, utilizando redes convolucionales siamesas basadas en CLIP.
+## 📝 Descripción
 
-## Estructura del Repositorio
+Este proyecto investiga y cuantifica la similitud entre obras artísticas originales de WikiArt y sus versiones generadas mediante Stable Diffusion XL Refiner 1.0, utilizando redes convolucionales siamesas basadas en CLIP y aprendizaje contrastivo.
 
-```
-00-huggingface/      # Scripts para comprimir y subir datasets/modelos a Hugging Face
-01-CorreccionWikiArt/ # Dataset corregido (original, resize 1024, resize 768)
-02-Resize/           # Códigos utilizados para el resize de imágenes
-03-Descripciones/    # Generación de descripciones con BLIP2
-04-Prompts/          # Generación de prompts con LLaMA 3 8B
-05-SDXL/             # Procesador para crear imágenes con SDXL y logs
-06-DescripcionesSDXL/ # Descripciones de imágenes generadas con SDXL usando BLIP2
-07-SIamesCLIP/       # Modelo siamese basado en CLIP para similitud de imágenes
-imagenes/            # Imágenes de resultados y comparaciones
+### Motivación
 
-.gitignore
-README.md
-context.md
-requirements.txt
-```
+Con el auge de modelos generativos como Stable Diffusion, resulta crucial entender y medir objetivamente qué tan similares son las imágenes generadas por IA comparadas con obras artísticas originales. Este trabajo proporciona una metodología y herramientas para cuantificar estas similitudes.
 
----
+## 🚀 Principales Características
 
-## 00 - Hugging Face Upload Scripts
-Scripts utilizados para la compresión y subida de archivos a Hugging Face, tanto para los datasets como para modelos entrenados.
+- Dataset curado de 81,444 imágenes de WikiArt con sus correspondientes versiones generadas por SDXL
+- Generación de descripciones automáticas con BLIP2
+- Prompts creativos generados con LLaMA 3 8B
+- Modelo siamés basado en CLIP para cálculo de similitud
+- Análisis comparativo entre arte original y generado por IA
 
----
+## 📊 Resultados
 
-## 01 - Corrección del Dataset WikiArt
-El dataset original de WikiArt fue corregido y mejorado para este estudio. Se encuentran disponibles tres versiones:
-
-- **Dataset corregido:** [WikiArt-81K-BLIP_2-captions](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-captions)
-- **Dataset con resize a 768x768:** [WikiArt-81K-BLIP_2-768x768](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-768x768)
-- **Dataset con resize a 1024x1024:** [WikiArt-81K-BLIP_2-1024x1024](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-1024x1024)
-
-Se realizaron las siguientes mejoras:
-1. Corrección de problemas de codificación.
-2. Normalización de géneros artísticos.
-3. Limpieza y reestructuración de datos.
-4. Generación de descripciones automáticas con BLIP2.
-
-Cada subdirectorio (original, image1024, image768) contiene su propio README con más detalles.
-
----
-
-## 02 - Resize de Imágenes
-Se utilizó interpolación Lanczos para asegurar la calidad de las imágenes:
-```python
-resize(target_size=(1024, 1024), resample=Image.LANCZOS)
-```
-Se añadió **padding negro** en 768x768 para conservar la proporción original.
-
----
-
-## 03 - Generación de Descripciones con BLIP2
-Se utilizaron los siguientes modelos:
-```python
-processor = Blip2Processor.from_pretrained("Salesforce/blip2-opt-2.7b")
-model = Blip2ForConditionalGeneration.from_pretrained("Salesforce/blip2-opt-2.7b")
-```
-Las descripciones de mayor calidad están en `01-CorreccionWikiArt`.
-
----
-
-## 04 - Generación de Prompts con LLaMA 3 8B
-Prompts generados con:
-- **Modelo base:** `meta-llama/Meta-Llama-3-8B-Instruct`
-- **Compresión de prompts:** `facebook/bart-large-cnn` (hasta 75 tokens)
-
-### Tipos de Modificación en los Prompts:
-- **Modificación Moderada:** Se mantiene la composición y tema original, pero con técnicas nuevas.
-- **Modificación Radical:** Transformación completa en estilo, medio o concepto.
-
----
-
-## 05 - Generación de Imágenes con Stable Diffusion XL
-Se usó **Stable Diffusion XL Refiner 1.0** con la siguiente configuración:
-- **Modelo:** `stabilityai/stable-diffusion-xl-refiner-1.0`
-- **VAE:** `madebyollin/taesdxl`
-- **Precisión:** FP16
-- **Optimizaciones:** GPU acceleration, VAE Slicing, Xformers Attention
-- **Parámetros de inferencia:**
-  - **Steps:** 25
-  - **Strength:** 0.4
-  - **Guidance Scale:** 7.5
-  - **Batch Size:** 6
-
-Dataset generado: [Wikiart_with_StableDiffusion](https://huggingface.co/datasets/Dant33/Wikiart_with_StableDiffusion)
-
----
-
-## 06 - Descripciones de Imágenes Generadas con SDXL
-Se generaron con **BLIP2** siguiendo el mismo proceso de `03-Descripciones`.
-
----
-
-## 07 - Modelo Siamesa Basado en CLIP
-Incluye:
-- **Entrenamiento del modelo** con aprendizaje contrastivo por tripletes.
-- **Inferencia y evaluación de similitud** entre imágenes artísticas y generadas.
-- **Métricas:** MSE, MAE, Cosine Similarity.
-
-Imágenes de salida disponibles en `07-SIamesCLIP/inference/`.
-
----
-
-## Resultados
-Algunos ejemplos de comparaciones y resultados:
+Algunos ejemplos de comparaciones entre obras originales y generadas:
 
 <div align="center">
     <figure>
         <img 
             src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output.png" 
             width="700" 
-            alt="Example"
+            alt="Comparación de Similitud 1"
         />
+        <figcaption>Similitud: 0.15 - Obras completamente distintas</figcaption>
     </figure>
 </div>
 <div align="center">
@@ -123,8 +37,8 @@ Algunos ejemplos de comparaciones y resultados:
         <img 
             src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output1.png" 
             width="700" 
-            alt="Example"
         />
+        <figcaption>Similitud: 0.81 - Obra Post impresionista de Pyotr Konchalovsky (dry paints 1913) y su versión generada</figcaption>
     </figure>
 </div>
 <div align="center">
@@ -134,22 +48,49 @@ Algunos ejemplos de comparaciones y resultados:
             width="700" 
             alt="Example"
         />
+        <figcaption>Similitud: 0.71 - Obras distintas pero con contexto similar</figcaption>
     </figure>
 </div>
 
+## 🛠️ Componentes del Proyecto
 
----
+### Datasets
 
-## Requerimientos
+- **Dataset corregido:** [WikiArt-81K-BLIP_2-captions](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-captions)
+- **Dataset con resize a 768x768:** [WikiArt-81K-BLIP_2-768x768](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-768x768)
+- **Dataset con resize a 1024x1024:** [WikiArt-81K-BLIP_2-1024x1024](https://huggingface.co/datasets/Dant33/WikiArt-81K-BLIP_2-1024x1024)
+- **Dataset generado:** [Wikiart_with_StableDiffusion](https://huggingface.co/datasets/Dant33/Wikiart_with_StableDiffusion)
+
+### Modelos y Técnicas
+
+- **Corrección de WikiArt**: Normalización de géneros, corrección de codificación y limpieza de datos
+- **Resize de Imágenes**: Interpolación Lanczos y padding negro para preservar proporciones
+- **Descripciones BLIP2**: Generadas con `Salesforce/blip2-opt-2.7b`
+- **Prompts LLaMA 3**: Generados con `meta-llama/Meta-Llama-3-8B-Instruct` y comprimidos con `facebook/bart-large-cnn`
+- **Generación SDXL**: Stable Diffusion XL Refiner 1.0 con optimizaciones (steps: 25, strength: 0.4, guidance: 7.5)
+- **Modelo Siamés CLIP**: Arquitectura contrastiva para evaluación de similitud
+
+
+## 📦 Estructura del Proyecto
+
+El repositorio está organizado en las siguientes carpetas:
+
+- **00-huggingface**: Scripts para subir datasets/modelos a Hugging Face
+- **01-CorreccionWikiArt**: Dataset WikiArt corregido (original y versiones redimensionadas)
+- **02-Resize**: Códigos para el procesamiento y redimensionado de imágenes
+- **03-Descripciones**: Generación de descripciones con BLIP2
+- **04-Prompts**: Generación de prompts con LLaMA 3 8B
+- **05-SDXL**: Procesador para crear imágenes con SDXL y logs de generación
+- **06-DescripcionesSDXL**: Descripciones de imágenes generadas usando BLIP2
+- **07-SiamesCLIP**: Modelo siamés basado en CLIP para cálculo de similitud
+
+
+## 🔧 Instalación y Uso
 Instalar dependencias con:
 ```bash
 pip install -r requirements.txt
 ```
 
-## Contacto
-Si tienes preguntas o sugerencias, contáctame en GitHub.
+## 📧 Contacto
 
----
-
-Este README proporciona una visión general del repositorio. Si necesitas información detallada, revisa los README dentro de cada carpeta.
-
+Si tienes preguntas o sugerencias, contáctame a través de [GitHub Issues](https://github.com/DiegoCastr00/CalculoSimilitud/issues) o [email](mailto:diego.castro.elvira@gmail.com).
