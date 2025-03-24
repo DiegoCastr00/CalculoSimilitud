@@ -29,7 +29,6 @@ Algunos ejemplos de comparaciones entre obras originales y generadas:
             width="700" 
             alt="Comparación de Similitud 1"
         />
-        <figcaption>Similitud: 0.15 - Obras completamente distintas</figcaption>
     </figure>
 </div>
 
@@ -40,7 +39,6 @@ Algunos ejemplos de comparaciones entre obras originales y generadas:
             src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output1.png" 
             width="700" 
         />
-        <figcaption>Similitud: 0.81 - Obra Post impresionista de Pyotr Konchalovsky (dry paints 1913) y su versión generada</figcaption>
     </figure>
 </div>
 
@@ -52,7 +50,6 @@ Algunos ejemplos de comparaciones entre obras originales y generadas:
             width="700" 
             alt="Example"
         />
-        <figcaption>Similitud: 0.71 - Obras distintas pero con contexto similar</figcaption>
     </figure>
 </div>
 
