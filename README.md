@@ -113,11 +113,30 @@ Algunos ejemplos de comparaciones y resultados:
     <figure>
         <img 
             src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output.png" 
-            width="600" 
+            width="700" 
             alt="Example"
         />
     </figure>
 </div>
+<div align="center">
+    <figure>
+        <img 
+            src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output1.png" 
+            width="700" 
+            alt="Example"
+        />
+    </figure>
+</div>
+<div align="center">
+    <figure>
+        <img 
+            src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output2.png" 
+            width="700" 
+            alt="Example"
+        />
+    </figure>
+</div>
+
 
 ---
 
