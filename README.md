@@ -112,7 +112,7 @@ Algunos ejemplos de comparaciones y resultados:
 <div align="center">
     <figure>
         <img 
-            src="[https://raw.githubusercontent.com/deepmancer/clip-object-detection/main/assets/CLIP.png](https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output.png)" 
+            src="https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output.png" 
             width="600" 
             alt="Example"
         />
