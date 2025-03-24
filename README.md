@@ -107,13 +107,17 @@ Imágenes de salida disponibles en `07-SIamesCLIP/inference/`.
 ---
 
 ## Resultados
-Algunos ejemplos de comparaciones y resultados se encuentran en la carpeta `imagenes/`.
+Algunos ejemplos de comparaciones y resultados:
 
-Ejemplo:
-```
-![Imagen generada](imagenes/output.png)
-![Imagen original](imagenes/original.png)
-```
+<div align="center">
+    <figure>
+        <img 
+            src="[https://raw.githubusercontent.com/deepmancer/clip-object-detection/main/assets/CLIP.png](https://raw.githubusercontent.com/DiegoCastr00/CalculoSimilitud/refs/heads/master/07-SIamesCLIP/inference/output.png)" 
+            width="600" 
+            alt="Example"
+        />
+    </figure>
+</div>
 
 ---
 
